@@ -1,4 +1,4 @@
-import type { Peripheral } from '@abandonware/noble';
+//import type { Peripheral } from '@abandonware/noble';
 
 import { API } from 'homebridge';
 
