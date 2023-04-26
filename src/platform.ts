@@ -66,7 +66,7 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
         // generate a unique id for the accessory this should be generated from
         // something globally unique, but constant, for example, the device serial
         // number or MAC address
-        const uuid = this.api.hap.uuid.generate(peripheral.advertisement.localName);
+        const uuid = this.api.hap.uuid.generate(peripheral.uuid);
 
         // see if an accessory with the same uuid has already been registered and restored from
         // the cached devices we stored in the `configureAccessory` method above
@@ -77,12 +77,12 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
           this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
 
           // if you need to update the accessory.context then you should run `api.updatePlatformAccessories`. eg.:
-          // existingAccessory.context.device = device;
+          // existingAccessory.context.peripheral = peripheral;
           // this.api.updatePlatformAccessories([existingAccessory]);
 
           // create the accessory handler for the restored accessory
           // this is imported from `platformAccessory.ts`
-          new ExamplePlatformAccessory(this, existingAccessory);
+          new ExamplePlatformAccessory(this, existingAccessory, peripheral);
 
           // it is possible to remove platform accessories at any time using `api.unregisterPlatformAccessories`, eg.:
           // remove platform accessories when no longer present
@@ -97,11 +97,11 @@ export class ExampleHomebridgePlatform implements DynamicPlatformPlugin {
 
           // store a copy of the device object in the `accessory.context`
           // the `context` property can be used to store any data about the accessory you may need
-          accessory.context.peripheral = peripheral;
+          // accessory.context.peripheral = peripheral;
 
           // create the accessory handler for the newly create accessory
           // this is imported from `platformAccessory.ts`
-          new ExamplePlatformAccessory(this, accessory);
+          new ExamplePlatformAccessory(this, accessory, peripheral);
 
           // link the accessory to your platform
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);

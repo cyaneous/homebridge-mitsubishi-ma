@@ -2,6 +2,8 @@ import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
 
 import { ExampleHomebridgePlatform } from './platform';
 
+import type { Peripheral } from '@abandonware/noble';
+
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
@@ -19,26 +21,26 @@ export class ExamplePlatformAccessory {
     TargetTemperature: 0,
     CurrentHeatingCoolingState: 0,
     TargetHeatingCoolingState: 0,
-    TemperatureDisplayUnits: 0
+    TemperatureDisplayUnits: 0,
   };
 
   constructor(
     private readonly platform: ExampleHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
+    private readonly peripheral: Peripheral,
   ) {
-
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Mitsubishi Electric')
       .setCharacteristic(this.platform.Characteristic.Model, 'PAR-CT01MAU')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, accessory.context.peripheral.advertisement.localName);
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, peripheral.uuid);
 
     // get the Thermostat service if it exists, otherwise create a new Thermostat service
     this.service = this.accessory.getService(this.platform.Service.Thermostat) || this.accessory.addService(this.platform.Service.Thermostat);
 
     // set the service name, this is what is displayed as the default name on the Home app
     // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.peripheral.advertisement.localName);
+    this.service.setCharacteristic(this.platform.Characteristic.Name, peripheral.advertisement.localName);
 
     // each service must implement at-minimum the "required characteristics" for the given service type
     // see https://developers.homebridge.io/#/service/Thermostat
@@ -62,32 +64,44 @@ export class ExamplePlatformAccessory {
       .onGet(this.handleTemperatureDisplayUnitsGet.bind(this))
       .onSet(this.handleTemperatureDisplayUnitsSet.bind(this));
   
-    /**
-     * Updating characteristics values asynchronously.
-     *
-     * Example showing how to update the state of a Characteristic asynchronously instead
-     * of using the `on('get')` handlers.
-     * Here we change update the motion sensor trigger states on and off every 10 seconds
-     * the `updateCharacteristic` method.
-     *
-     */
-    // let motionDetected = false;
-    setInterval(() => {
-      // EXAMPLE - inverse the trigger
-      // motionDetected = !motionDetected;
-
-      // push the new value to HomeKit
-      // motionSensorOneService.updateCharacteristic(this.platform.Characteristic.MotionDetected, motionDetected);
-      // motionSensorTwoService.updateCharacteristic(this.platform.Characteristic.MotionDetected, !motionDetected);
-
-      // this.platform.log.debug('Triggering motionSensorOneService:', motionDetected);
-      // this.platform.log.debug('Triggering motionSensorTwoService:', !motionDetected);
-    }, 10000);
+   /**
+    * Update characteristics values asynchronously.
+    */
+    setInterval(async () => {
+      await this.update();
+    }, 5000);
   }
 
-/**
-   * Handle requests to get the current value of the "Current Heating Cooling State" characteristic
-   */
+  async update() {
+    this.platform.log.debug('update()');
+
+    if (this.peripheral.state != 'connected')
+      await this.peripheral.connectAsync();
+
+    // read 13
+    // read 15
+
+    const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18-e796-11e6-bf01-fe55135034f3'], ['799e3b22-e797-11e6-bf01-fe55135034f3', 'def9382a-e795-11e6-bf01-fe55135034f3', 'e48c1528-e795-11e6-bf01-fe55135034f3', 'ea1ea690-e795-11e6-bf01-fe55135034f3']);
+    
+    characteristics[2].write(Buffer.from([0x0B, 0x00, 0x00, 0x03, 0x00, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00, 0x55, 0x00]), true);
+
+    // looking for 0x0834 or 0x0898
+
+    const c = characteristics[3];
+    c.subscribe();
+    c.once('notify', async (state) => {
+      const v = await c.readAsync();
+      const temp = v.readInt16BE(2);
+      this.platform.log.info("state c", state, v, temp);
+      this.thermostatStates.CurrentTemperature = temp/100.0;
+      this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.thermostatStates.CurrentTemperature);
+    });
+    //await peripheral.disconnectAsync();
+  }
+
+ /**
+  * Handle requests to get the current value of the "Current Heating Cooling State" characteristic
+  */
   handleCurrentHeatingCoolingStateGet() {
     this.platform.log.debug('Triggered GET CurrentHeatingCoolingState');
 
@@ -96,7 +110,6 @@ export class ExamplePlatformAccessory {
 
     return currentValue;
   }
-
 
   /**
    * Handle requests to get the current value of the "Target Heating Cooling State" characteristic
@@ -125,7 +138,6 @@ export class ExamplePlatformAccessory {
 
     return this.thermostatStates.CurrentTemperature;
   }
-
 
   /**
    * Handle requests to get the current value of the "Target Temperature" characteristic

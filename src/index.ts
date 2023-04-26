@@ -1,5 +1,3 @@
-//import type { Peripheral } from '@abandonware/noble';
-
 import { API } from 'homebridge';
 
 import { PLATFORM_NAME } from './settings';
