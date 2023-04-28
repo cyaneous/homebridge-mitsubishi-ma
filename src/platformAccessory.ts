@@ -116,11 +116,13 @@ export class ExamplePlatformAccessory {
     const v1 = await c1.readAsync();
     this.platform.log.info("read c1", v1);
 
-    // const responseMaybeNotSure = await this.peripheral.writeHandleAsync(0x001a, Buffer.from([0x01, 0x00]), false);
+    // doesn't seem to work, 0x0100 is always sent to handle 0x1a
+    // const responseMaybeNotSure = await this.peripheral.writeHandleAsync(0x1a, Buffer.from([0x01, 0x00]), false);
 
     const c3 = characteristics[3];
     c3.notify(true);
 
+    // only sent on login - authentication? not required, just jump starts the messaging flow
     await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x00, 0x03, 0x00, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00, 0x55, 0x00]), true);
 
     var n = 0;
@@ -129,57 +131,110 @@ export class ExamplePlatformAccessory {
 
       // Process response
       switch (data.readUInt8()) {
+      case 0x35:
+        const mode = data.readUInt8(9);
+        switch (mode) {
+        case 0x10: // off
+          this.thermostatStates.Active = this.platform.Characteristic.Active.INACTIVE
+        case 0x02: // fan
+          break;
+        case 0x32: // dry
+          break;
+        case 0x12: // heat
+          this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
+          this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
+          break;
+        case 0x0a: // cool
+          this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
+          this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
+          break;
+        case 0x7a: // auto
+          this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
+          this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
+          break;
+        default:
+          break;
+        }
+        this.platform.log.info('Active:', this.thermostatStates.Active);
+        this.service.updateCharacteristic(this.platform.Characteristic.Active, this.thermostatStates.Active);
+        this.platform.log.info('TargetHeaterCoolerState:', this.thermostatStates.TargetHeaterCoolerState);
+        this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.thermostatStates.TargetHeaterCoolerState);
+        break;
       case 0x60:
         const targetCoolTemp = this.rawHexToDec(data, 10);
-        this.platform.log.info('targetCoolTemp:', targetCoolTemp);
+        this.platform.log.info('CoolingThresholdTemperature:', targetCoolTemp);
         this.thermostatStates.CoolingThresholdTemperature = targetCoolTemp;
         this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature, this.thermostatStates.CoolingThresholdTemperature);
 
         const targetHeatTemp = this.rawHexToDec(data, 12);
-        this.platform.log.info('targetHeatTemp:', targetHeatTemp);
+        this.platform.log.info('HeatingThresholdTemperature:', targetHeatTemp);
         this.thermostatStates.HeatingThresholdTemperature = targetHeatTemp;
         this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.thermostatStates.HeatingThresholdTemperature);
         break;
 
       case 0x40:
         const currentTemp = this.rawHexToDec(data, 7);
-        this.platform.log.info('currentTemp:', currentTemp);
+        this.platform.log.info('CurrentTemperature:', currentTemp);
         this.thermostatStates.CurrentTemperature = currentTemp;
         this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.thermostatStates.CurrentTemperature);
+
+        if (this.thermostatStates.Active == this.platform.Characteristic.Active.ACTIVE) {
+          const state = data.readUInt8(1);
+          switch (state) {
+          case 0x04: // heat
+            this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+            break;
+          case 0x06: // cool
+            this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+            break;
+          default:
+            this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+            break;
+          }
+        } else {
+          this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+        }
+        this.platform.log.info('CurrentHeaterCoolerState:', this.thermostatStates.CurrentHeaterCoolerState);
+        this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.thermostatStates.CurrentHeaterCoolerState);
         break;
 
       default:
         break;
       }
 
-      this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE;
-      this.service.updateCharacteristic(this.platform.Characteristic.Active, this.thermostatStates.Active);
-
-      this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
-      this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.thermostatStates.CurrentHeaterCoolerState);
-
-      this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
-      this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.thermostatStates.TargetHeaterCoolerState);
-
       // Send another command
       switch (n) {
-      case 0: 
-        0B00 0001 0002 BC32 0100 00FD 00
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x01, 0x01, 0x00, 0x02, 0x23, 0x23, 0x01, 0x00, 0x00, 0xFE, 0x00]), true);
+      case 0:
+        // 0B00 0001 0002 BC32 0100 00FD 00 -- not sure
+        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x00, 0x01, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0xFD, 0x00]), true);
         break;
-      case 1: 
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x02, 0x03, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x01, 0x01]), true);
+      case 1:
+        // 0B00 0103 0002 BC32 0100 0000 01 -- not sure
+        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x01, 0x03, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x00, 0x01]), true);
         break;
-      case 2: 
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x03, 0x01, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x04, 0x01]), true);
+      case 2:
+        // 0B00 0201 0402 BC32 0100 0003 01 -- not sure
+        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x02, 0x01, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x03, 0x01]), true);
         break;
       case 3: 
-        await characteristics[2].writeAsync(Buffer.from([0x06, 0x00, 0x00, 0x05, 0x02, 0x00, 0x0D, 0x00]), true);
+        // 0600 0305 0200 1000 -- gets status
+        await characteristics[2].writeAsync(Buffer.from([0x06, 0x00, 0x03, 0x05, 0x02, 0x00, 0x10, 0x00]), true);
         break;
       case 6: 
+        // 0B00 0403 0402 BC32 0100 0007 01 -- not sure
+        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x04, 0x03, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x07, 0x01]), true);
+        break;
+      case 7:
+        // 0B00 0501 0102 BC32 0100 0003 01 -- not sure
+        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x05, 0x01, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x03, 0x01]), true);
+        break;
+      case 8:
+        // 0B00 0603 0102 BC32 0100 0006 01 -- not sure, sent before disconnecting
+        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x06, 0x03, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x06, 0x01]), true);
+        break;
+      case 9:
         this.platform.log.info('disconnecting');
-        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x06, 0x03, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x06, 0x01]), true);
-        await this.peripheral.disconnectAsync();
+        await this.peripheral.disconnectAsync(); 
         break;
       default: 
         break;
