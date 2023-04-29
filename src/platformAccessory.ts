@@ -12,6 +12,7 @@ import type { Peripheral } from '@abandonware/noble';
 export class ExamplePlatformAccessory {
   private service: Service;
   private updateTimeout: ReturnType<typeof setTimeout>;
+  private msgid: number = 0;
 
   /**
    * These are just used to create a working example
@@ -97,7 +98,7 @@ export class ExamplePlatformAccessory {
 
     if (this.peripheral.state == 'connected') return;
     
-    this.platform.log.info('connecting');
+    this.platform.log.info('Connecting...');
     await this.peripheral.connectAsync();
 
     const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18-e796-11e6-bf01-fe55135034f3'], 
@@ -110,14 +111,15 @@ export class ExamplePlatformAccessory {
     
     const c0 = characteristics[0];
     const v0 = await c0.readAsync();
-    this.platform.log.info("read c0", v0);
+    this.platform.log.debug("Read c0:", v0);
+    if (Buffer.compare(v0, Buffer.from([0x30, 0x31, 0x2e, 0x30, 0x30, 0x2e, 0x30, 0x30])) != 0)
+      this.platform.log.error('Unexpected c0 value:', v0);
 
     const c1 = characteristics[1];
     const v1 = await c1.readAsync();
-    this.platform.log.info("read c1", v1);
-
-    // doesn't seem to work, 0x0100 is always sent to handle 0x1a
-    // const responseMaybeNotSure = await this.peripheral.writeHandleAsync(0x1a, Buffer.from([0x01, 0x00]), false);
+    this.platform.log.debug("Read c1:", v1);
+    if (Buffer.compare(v1, Buffer.from([0x43, 0x54, 0x30, 0x31, 0x4d, 0x41, 0x55, 0x5f, 0x30, 0x31, 0x2e, 0x36, 0x31, 0x00, 0x00, 0x00, 0x00, 0x41])) != 0)
+      this.platform.log.error('Unexpected c1 value:', v1);
 
     const c3 = characteristics[3];
     c3.notify(true);
@@ -153,6 +155,7 @@ export class ExamplePlatformAccessory {
           this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
           break;
         default:
+          this.platform.log.error('Unexpected mode:', mode)
           break;
         }
         this.platform.log.info('Active:', this.thermostatStates.Active);
@@ -179,18 +182,35 @@ export class ExamplePlatformAccessory {
         this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.thermostatStates.CurrentTemperature);
 
         if (this.thermostatStates.Active == this.platform.Characteristic.Active.ACTIVE) {
-          const state = data.readUInt8(1);
-          switch (state) {
-          case 0x04: // heat
+          switch (this.thermostatStates.TargetHeaterCoolerState) {
+          case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
             this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
             break;
-          case 0x06: // cool
+          case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
             this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
             break;
-          default:
-            this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+          case this.platform.Characteristic.TargetHeaterCoolerState.AUTO:
+            if (this.thermostatStates.TargetHeaterCoolerState < this.thermostatStates.CurrentTemperature) {
+              this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+            } else if (this.thermostatStates.TargetHeaterCoolerState > this.thermostatStates.CurrentTemperature) {
+              this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+            } else {
+              this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+            }
             break;
           }
+          // const state = data.readUInt8(1);
+          // switch (state) {
+          // case 0x04: // heat
+          //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+          //   break;
+          // case 0x06: // cool
+          //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+          //   break;
+          // default:
+          //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+          //   break;
+          // }
         } else {
           this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
         }
@@ -206,34 +226,48 @@ export class ExamplePlatformAccessory {
       switch (n) {
       case 0:
         // 0B00 0001 0002 BC32 0100 00FD 00 -- not sure
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x00, 0x01, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0xFD, 0x00]), true);
+        // 0B00 0601 0001 2323 0000 0059 00
+        await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x00, 0x01, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0xFD, 0x00]), true);
         break;
       case 1:
         // 0B00 0103 0002 BC32 0100 0000 01 -- not sure
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x01, 0x03, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x00, 0x01]), true);
+        // 0B00 0703 0001 2323 0000 005C 00
+        await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x01, 0x03, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x00, 0x01]), true);
         break;
       case 2:
         // 0B00 0201 0402 BC32 0100 0003 01 -- not sure
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x02, 0x01, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x03, 0x01]), true);
+        // 1700 0105 0101 0100 0010 4502 1002 9001… 6400 0051 02
+        await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x02, 0x01, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x03, 0x01]), true);
         break;
       case 3: 
         // 0600 0305 0200 1000 -- gets status
-        await characteristics[2].writeAsync(Buffer.from([0x06, 0x00, 0x03, 0x05, 0x02, 0x00, 0x10, 0x00]), true);
+        await this.sendCommand(characteristics[2], Buffer.from([0x05, 0x02, 0x00]));
+        // await characteristics[2].writeAsync(Buffer.from([0x06, 0x00, 0x03, 0x05, 0x02, 0x00, 0x10, 0x00]), true);
         break;
       case 6: 
         // 0B00 0403 0402 BC32 0100 0007 01 -- not sure
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x04, 0x03, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x07, 0x01]), true);
+        await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x04, 0x03, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x07, 0x01]), true);
         break;
       case 7:
         // 0B00 0501 0102 BC32 0100 0003 01 -- not sure
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x05, 0x01, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x03, 0x01]), true);
+        await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x05, 0x01, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x03, 0x01]), true);
         break;
       case 8:
         // 0B00 0603 0102 BC32 0100 0006 01 -- not sure, sent before disconnecting
-        await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x06, 0x03, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x06, 0x01]), true);
+        await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x06, 0x03, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x06, 0x01]), true);
         break;
       case 9:
         this.platform.log.info('disconnecting');
+        // ...6400 0051 02 -- off
+        // await characteristics[2].writeAsync(Buffer.from([0x64, 0x00, 0x00, 0x51, 0x02]), true);
+        // ...6400 0056 02 -- on
+        // await characteristics[2].writeAsync(Buffer.from([0x64, 0x00, 0x00, 0x56, 0x02]), true);
         await this.peripheral.disconnectAsync(); 
         break;
       default: 
@@ -241,9 +275,26 @@ export class ExamplePlatformAccessory {
       }
 
       n++;
-
-      // todo: check heat/cool/auto thresholds, state, on/off, vane/swing, fan speed, isee, dry
+      // todo: pin support, heat/cool/idle state, on/off, vane/swing, fan speed, isee, dry mode, fan mode
+      // controlling: setpoints, state, on/off, vane/swing, fan speed, isee, dry mode, fan mode
     });
+  }
+
+  // [2: length] [1: count] [l: body] [2: cksum]
+  async sendCommand(c, body) {
+    var buffer = Buffer.alloc(2 + 1 + body.length + 2);
+    buffer.writeUInt16LE(1 + body.length + 2, 0);
+    buffer.writeUInt8(this.msgid, 2);
+    body.copy(buffer, 3);
+    buffer.writeUInt16LE(this.checksum(buffer), buffer.length - 2);
+    this.platform.log.info('Send:', buffer)
+    await c.writeAsync(buffer, true);
+    this.msgid += 1; 
+    if (this.msgid > 7) this.msgid = 0;
+  }
+
+  checksum(data: Buffer): number {
+    return data.reduce((a, b) => (a + b) & 0xffff, 0);
   }
 
   rawHexToDec(buffer: Buffer, offset: number) : number {
