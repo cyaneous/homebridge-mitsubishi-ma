@@ -128,155 +128,24 @@ export class ExamplePlatformAccessory {
     await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x00, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00]));
 
     var n = 0;
+    var receiveLength = 0;
+    var receiveBuffer;
     c3.on('data', async (data, x) => {
       this.platform.log.info('Notify data:', n, data, x);
 
-      // Process response
-      switch (data.readUInt8()) {
-      case 0x35:
-        const mode = data.readUInt8(9);
-        switch (mode) {
-        case 0x10: // off
-          this.thermostatStates.Active = this.platform.Characteristic.Active.INACTIVE
-        case 0x02: // fan
-          break;
-        case 0x32: // dry
-          break;
-        case 0x12: // heat
-          this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
-          this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
-          break;
-        case 0x0a: // cool
-          this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
-          this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
-          break;
-        case 0x7a: // auto
-          this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
-          this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
-          break;
-        default:
-          this.platform.log.error('Unexpected mode:', mode)
-          break;
-        }
-        this.platform.log.info('Active:', this.thermostatStates.Active);
-        this.service.updateCharacteristic(this.platform.Characteristic.Active, this.thermostatStates.Active);
-        this.platform.log.info('TargetHeaterCoolerState:', this.thermostatStates.TargetHeaterCoolerState);
-        this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.thermostatStates.TargetHeaterCoolerState);
-        break;
-      case 0x60:
-        const targetCoolTemp = this.rawHexToDec(data, 10);
-        this.platform.log.info('CoolingThresholdTemperature:', targetCoolTemp);
-        this.thermostatStates.CoolingThresholdTemperature = targetCoolTemp;
-        this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature, this.thermostatStates.CoolingThresholdTemperature);
-
-        const targetHeatTemp = this.rawHexToDec(data, 12);
-        this.platform.log.info('HeatingThresholdTemperature:', targetHeatTemp);
-        this.thermostatStates.HeatingThresholdTemperature = targetHeatTemp;
-        this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.thermostatStates.HeatingThresholdTemperature);
-        break;
-
-      case 0x40:
-        const currentTemp = this.rawHexToDec(data, 7);
-        this.platform.log.info('CurrentTemperature:', currentTemp);
-        this.thermostatStates.CurrentTemperature = currentTemp;
-        this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.thermostatStates.CurrentTemperature);
-
-        if (this.thermostatStates.Active == this.platform.Characteristic.Active.ACTIVE) {
-          switch (this.thermostatStates.TargetHeaterCoolerState) {
-          case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
-            this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
-            break;
-          case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
-            this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
-            break;
-          case this.platform.Characteristic.TargetHeaterCoolerState.AUTO:
-            if (this.thermostatStates.TargetHeaterCoolerState < this.thermostatStates.CurrentTemperature) {
-              this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
-            } else if (this.thermostatStates.TargetHeaterCoolerState > this.thermostatStates.CurrentTemperature) {
-              this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
-            } else {
-              this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
-            }
-            break;
-          }
-          // const state = data.readUInt8(1);
-          // switch (state) {
-          // case 0x04: // heat
-          //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
-          //   break;
-          // case 0x06: // cool
-          //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
-          //   break;
-          // default:
-          //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
-          //   break;
-          // }
-        } else {
-          this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
-        }
-        this.platform.log.info('CurrentHeaterCoolerState:', this.thermostatStates.CurrentHeaterCoolerState);
-        this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.thermostatStates.CurrentHeaterCoolerState);
-        break;
-
-      default:
-        break;
+      if (receiveLength == 0) {
+        const len = data.readUInt8();
+        receiveLength += len;
+        receiveBuffer = Buffer.alloc(len);
+      } else {
+        receiveLength += data.length;
       }
 
-      // Send another command
-      switch (n) {
-      case 0:
-        // 0B00 0001 0002 BC32 0100 00FD 00 -- not sure
-        // 0B00 0601 0001 2323 0000 0059 00
-        await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
-        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x00, 0x01, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0xFD, 0x00]), true);
-        break;
-      case 1:
-        // 0B00 0103 0002 BC32 0100 0000 01 -- not sure
-        // 0B00 0703 0001 2323 0000 005C 00
-        await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
-        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x01, 0x03, 0x00, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x00, 0x01]), true);
-        break;
-      case 2:
-        // 0B00 0201 0402 BC32 0100 0003 01 -- not sure
-        // 1700 0105 0101 0100 0010 4502 1002 9001… 6400 0051 02
-        await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
-        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x02, 0x01, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x03, 0x01]), true);
-        break;
-      case 3: 
-        // 0600 0305 0200 1000 -- gets status
-        await this.sendCommand(characteristics[2], Buffer.from([0x05, 0x02, 0x00]));
-        // await characteristics[2].writeAsync(Buffer.from([0x06, 0x00, 0x03, 0x05, 0x02, 0x00, 0x10, 0x00]), true);
-        break;
-      case 6: 
-        // 0B00 0403 0402 BC32 0100 0007 01 -- not sure
-        await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
-        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x04, 0x03, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x07, 0x01]), true);
-        break;
-      case 7:
-        // 0B00 0501 0102 BC32 0100 0003 01 -- not sure
-        await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
-        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x05, 0x01, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x03, 0x01]), true);
-        break;
-      case 8:
-        // 0B00 0603 0102 BC32 0100 0006 01 -- not sure, sent before disconnecting
-        await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
-        // await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x06, 0x03, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00, 0x06, 0x01]), true);
-        break;
-      case 9:
-        this.platform.log.info('disconnecting');
-        // ...6400 0051 02 -- off
-        // await characteristics[2].writeAsync(Buffer.from([0x64, 0x00, 0x00, 0x51, 0x02]), true);
-        // ...6400 0056 02 -- on
-        // await characteristics[2].writeAsync(Buffer.from([0x64, 0x00, 0x00, 0x56, 0x02]), true);
-        await this.peripheral.disconnectAsync(); 
-        break;
-      default: 
-        break;
-      }
+      data.copy(receiveBuffer, receiveLength);
 
-      n++;
-      // todo: pin support, heat/cool/idle state, on/off, vane/swing, fan speed, isee, dry mode, fan mode
-      // controlling: setpoints, state, on/off, vane/swing, fan speed, isee, dry mode, fan mode
+      if (receiveBuffer.length == receiveLength) {
+        await receivedValue(receiveBuffer)
+      }
     });
   }
 
@@ -291,6 +160,10 @@ export class ExamplePlatformAccessory {
     await c.writeAsync(buffer, true);
     this.msgid += 1; 
     if (this.msgid > 7) this.msgid = 0;
+  }
+
+  async receivedValue(data) {
+
   }
 
   checksum(data: Buffer): number {
