@@ -125,7 +125,7 @@ export class ExamplePlatformAccessory {
     c3.notify(true);
 
     // only sent on login - authentication? not required, just jump starts the messaging flow
-    await characteristics[2].writeAsync(Buffer.from([0x0B, 0x00, 0x00, 0x03, 0x00, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00, 0x55, 0x00]), true);
+    await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x00, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00]));
 
     var n = 0;
     c3.on('data', async (data, x) => {
