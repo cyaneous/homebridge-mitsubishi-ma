@@ -13,6 +13,9 @@ export class ExamplePlatformAccessory {
   private service: Service;
   private updateTimeout: ReturnType<typeof setTimeout>;
   private msgid: number = 0;
+  private receiveLength = 0;
+  private receiveBuffer;
+  private receiveResolve;
 
   /**
    * These are just used to create a working example
@@ -70,7 +73,6 @@ export class ExamplePlatformAccessory {
     this.service.getCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature)
       .onGet(this.handleCoolingThresholdTemperatureGet.bind(this))
       .onSet(this.handleCoolingThresholdTemperatureSet.bind(this));
-
   
    /**
     * Update characteristics values asynchronously.
@@ -124,46 +126,150 @@ export class ExamplePlatformAccessory {
     const c3 = characteristics[3];
     c3.notify(true);
 
-    // only sent on login - authentication? not required, just jump starts the messaging flow
-    await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x00, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00]));
+    c3.on('data', async (data, notify) => {
+      this.platform.log.info('Received:', this.receiveLength, data);
 
-    var n = 0;
-    var receiveLength = 0;
-    var receiveBuffer;
-    c3.on('data', async (data, x) => {
-      this.platform.log.info('Notify data:', n, data, x);
-
-      if (receiveLength == 0) {
+      if (this.receiveLength == 0) {
         const len = data.readUInt8();
-        receiveLength += len;
-        receiveBuffer = Buffer.alloc(len);
+        // FIXME: check checksum, maybe drop it off the message
+        this.receiveBuffer = Buffer.alloc(len);
+        data.copy(this.receiveBuffer, 0, 2);
+        this.receiveLength += data.length - 2;
       } else {
-        receiveLength += data.length;
+        data.copy(this.receiveBuffer, this.receiveLength);
+        this.receiveLength += data.length;
       }
 
-      data.copy(receiveBuffer, receiveLength);
-
-      if (receiveBuffer.length == receiveLength) {
-        await receivedValue(receiveBuffer)
+      if (this.receiveBuffer.length == this.receiveLength) {
+        await this.receivedMessage(this.receiveBuffer);
+        this.receiveLength = 0;
       }
+    });
+
+    // let's talk...
+    await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x00, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00]));
+    await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x00, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00]));
+    await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x03, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00]));
+    await this.sendCommand(characteristics[2], Buffer.from([0x05, 0x00, 0x00])); // not sure?
+    await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x03, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00]));
+    await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x04, 0x01, 0x23, 0x23, 0x00, 0x00, 0x00]));
+    const status = await this.sendCommand(characteristics[2], Buffer.from([0x05, 0x02, 0x00]));
+    await this.processStatus(status);
+    await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x04, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+    await this.sendCommand(characteristics[2], Buffer.from([0x01, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+    await this.sendCommand(characteristics[2], Buffer.from([0x03, 0x01, 0x02, 0xBC, 0x32, 0x01, 0x00, 0x00]));
+    this.platform.log.info('Disconnecting!');
+    await this.peripheral.disconnectAsync(); 
+  }
+
+  // [2: length] [1: msgid] [l: body] [2: cksum]
+  async sendCommand(characteristic, body) : Promise<Buffer> {
+    return new Promise<Buffer>((resolve, reject) => { 
+      var buffer = Buffer.alloc(2 + 1 + body.length + 2);
+      buffer.writeUInt16LE(1 + body.length + 2, 0);
+      buffer.writeUInt8(this.msgid, 2);
+      body.copy(buffer, 3);
+      buffer.writeUInt16LE(this.checksum(buffer), buffer.length - 2);
+      this.platform.log.info('Sent:', buffer)
+       characteristic.write(buffer, true); // TODO: handle thrown errors here and other places
+      this.msgid += 1; 
+      if (this.msgid > 7) this.msgid = 0;
+      // await this.delay(500);
+      this.receiveResolve = resolve;
     });
   }
 
-  // [2: length] [1: count] [l: body] [2: cksum]
-  async sendCommand(c, body) {
-    var buffer = Buffer.alloc(2 + 1 + body.length + 2);
-    buffer.writeUInt16LE(1 + body.length + 2, 0);
-    buffer.writeUInt8(this.msgid, 2);
-    body.copy(buffer, 3);
-    buffer.writeUInt16LE(this.checksum(buffer), buffer.length - 2);
-    this.platform.log.info('Send:', buffer)
-    await c.writeAsync(buffer, true);
-    this.msgid += 1; 
-    if (this.msgid > 7) this.msgid = 0;
+  async receivedMessage(data) {
+    this.platform.log.debug("Message:", data)
+    this.receiveResolve(data);
+    this.receiveResolve = undefined;
   }
 
-  async receivedValue(data) {
+  async processStatus(data) {
+    if (data.length != 0x35) {
+      this.platform.log.error('Invalid status data length:', data.length)
+      return;
+    }
 
+    const mode = data.readUInt8(7);
+    switch (mode) {
+    case 0x10: // off
+      this.thermostatStates.Active = this.platform.Characteristic.Active.INACTIVE
+    case 0x02: // fan
+      break;
+    case 0x32: // dry
+      break;
+    case 0x12: // heat
+      this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
+      this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
+      break;
+    case 0x0a: // cool
+      this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
+      this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
+      break;
+    case 0x7a: // auto
+      this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
+      this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
+      break;
+    default:
+      this.platform.log.error('Unexpected mode:', mode)
+      break;
+    }
+    this.platform.log.info('Active:', this.thermostatStates.Active);
+    this.service.updateCharacteristic(this.platform.Characteristic.Active, this.thermostatStates.Active);
+    this.platform.log.info('TargetHeaterCoolerState:', this.thermostatStates.TargetHeaterCoolerState);
+    this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.thermostatStates.TargetHeaterCoolerState);
+
+    const targetCoolTemp = this.rawHexToDec(data, 28);
+    this.platform.log.info('CoolingThresholdTemperature:', targetCoolTemp);
+    this.thermostatStates.CoolingThresholdTemperature = targetCoolTemp;
+    this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature, this.thermostatStates.CoolingThresholdTemperature);
+
+    const targetHeatTemp = this.rawHexToDec(data, 30);
+    this.platform.log.info('HeatingThresholdTemperature:', targetHeatTemp);
+    this.thermostatStates.HeatingThresholdTemperature = targetHeatTemp;
+    this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.thermostatStates.HeatingThresholdTemperature);
+
+    const currentTemp = this.rawHexToDec(data, 45);
+    this.platform.log.info('CurrentTemperature:', currentTemp);
+    this.thermostatStates.CurrentTemperature = currentTemp;
+    this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.thermostatStates.CurrentTemperature);
+
+    if (this.thermostatStates.Active == this.platform.Characteristic.Active.ACTIVE) {
+      switch (this.thermostatStates.TargetHeaterCoolerState) {
+      case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
+        this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+        break;
+      case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
+        this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+        break;
+      case this.platform.Characteristic.TargetHeaterCoolerState.AUTO:
+        if (this.thermostatStates.TargetHeaterCoolerState < this.thermostatStates.CurrentTemperature) {
+          this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+        } else if (this.thermostatStates.TargetHeaterCoolerState > this.thermostatStates.CurrentTemperature) {
+          this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+        } else {
+          this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+        }
+        break;
+      }
+      // const state = data.readUInt8(1);
+      // switch (state) {
+      // case 0x04: // heat
+      //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+      //   break;
+      // case 0x06: // cool
+      //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+      //   break;
+      // default:
+      //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+      //   break;
+      // }
+    } else {
+      this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+    }
+    this.platform.log.info('CurrentHeaterCoolerState:', this.thermostatStates.CurrentHeaterCoolerState);
+    this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.thermostatStates.CurrentHeaterCoolerState);
   }
 
   checksum(data: Buffer): number {
@@ -174,6 +280,12 @@ export class ExamplePlatformAccessory {
     const a = buffer.readUInt8(offset+1); // 01
     const b = buffer.readUInt8(offset); // 95
     return (((a & 0xf)*100)+((b >> 4)*10)+(b & 0xf))/10.0;
+  }
+
+  delay(ms) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 
  /**
