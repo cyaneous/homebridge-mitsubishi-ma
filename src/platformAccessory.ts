@@ -15,20 +15,16 @@ export class MATouchPlatformAccessory {
   private receiveBuffer;
   private receiveResolve;
 
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private thermostatStates = {
+  private currentState = {
     Active: 0,
-    CurrentHeaterCoolerState: 0, // this.platform.Characteristic.CurrentHeaterCoolerState.OFF
-    TargetHeaterCoolerState: 0, // this.platform.Characteristic.TargetHeaterCoolerState.OFF
+    CurrentHeaterCoolerState: 0,
+    TargetHeaterCoolerState: 0,
     CurrentTemperature: 10,
     CoolingThresholdTemperature: 10,
     HeatingThresholdTemperature: 10,
   };
 
-  private changedStates = {
+  private changedState = {
     Active: false,
     TargetHeaterCoolerState: false,
     CoolingThresholdTemperature: false,
@@ -50,13 +46,9 @@ export class MATouchPlatformAccessory {
     this.service = this.accessory.getService(this.platform.Service.HeaterCooler) || this.accessory.addService(this.platform.Service.HeaterCooler);
 
     // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
     this.service.setCharacteristic(this.platform.Characteristic.Name, peripheral.advertisement.localName);
 
-    // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Thermostat
-
-    // register handlers for the Thermostat Characteristics
+    // register handlers for the Heater Cooler Characteristics
     this.service.getCharacteristic(this.platform.Characteristic.Active)
       .onGet(this.handleActiveGet.bind(this))
       .onSet(this.handleActiveSet.bind(this));
@@ -79,33 +71,23 @@ export class MATouchPlatformAccessory {
       .onGet(this.handleCoolingThresholdTemperatureGet.bind(this))
       .onSet(this.handleCoolingThresholdTemperatureSet.bind(this));
   
-   /**
-    * Update characteristics values asynchronously.
-    */
-
-    this.updateTimeout = setTimeout(async () => {
-      await this.update();
-    }, 500);
+    // Update characteristics values asynchronously
+    this.updateTimeout = setTimeout(async () => await this.update(), 250);
   }
 
   // MARK: - Updates
-
-  async forceUpdate() {
-    clearTimeout(this.updateTimeout);
-
-    this.updateTimeout = setTimeout(this.update, 1000);
-  }
 
   async update() {
     this.platform.log.debug('update()');
 
     clearTimeout(this.updateTimeout);
 
-    this.updateTimeout = setTimeout(async () => {
-      await this.update();
-    }, 10000);
-
-    if (this.peripheral.state == 'connected') return;
+    if (this.peripheral.state == 'connected') {
+      this.updateTimeout = setTimeout(async () => await this.update(), 3000);
+      return;
+    } else {
+      this.updateTimeout = setTimeout(async () => await this.update(), 10000);
+    }
     
     this.platform.log.info('Connecting...');
     await this.peripheral.connectAsync();
@@ -115,7 +97,7 @@ export class MATouchPlatformAccessory {
         '799e3b22-e797-11e6-bf01-fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013, uuid = 799e3b22-e797-11e6-bf01-fe55135034f3
         'def9382a-e795-11e6-bf01-fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015, uuid = def9382a-e795-11e6-bf01-fe55135034f3
         'e48c1528-e795-11e6-bf01-fe55135034f3', // handle = 0x0016, char properties = 0x0c, char value handle = 0x0017, uuid = e48c1528-e795-11e6-bf01-fe55135034f3
-        'ea1ea690-e795-11e6-bf01-fe55135034f3' // handle = 0x0018, char properties = 0x10, char value handle = 0x0019, uuid = ea1ea690-e795-11e6-bf01-fe55135034f3
+        'ea1ea690-e795-11e6-bf01-fe55135034f3', // handle = 0x0018, char properties = 0x10, char value handle = 0x0019, uuid = ea1ea690-e795-11e6-bf01-fe55135034f3
       ]);
     
     const c0 = characteristics[0];
@@ -138,7 +120,7 @@ export class MATouchPlatformAccessory {
 
       if (this.receiveLength == 0) {
         const len = data.readUInt8();
-        // FIXME: check checksum, maybe drop it off the message
+        // TODO: check checksum, maybe trim it off the message
         this.receiveBuffer = Buffer.alloc(len);
         data.copy(this.receiveBuffer, 0, 2);
         this.receiveLength += data.length - 2;
@@ -153,7 +135,6 @@ export class MATouchPlatformAccessory {
       }
     });
 
-    // todo: pin config, heat/cool/idle status reporting, vane/swing, fan speed, isee, dry mode, fan mode
     const pinA = 0x23;
     const pinB = 0x23;
 
@@ -166,25 +147,25 @@ export class MATouchPlatformAccessory {
     await this.sendCommand(c2, Buffer.from([0x03, 0x03, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
     await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
     
-    if (this.changedStates.Active) {
-      await this.maSetOnOff(c2, this.thermostatStates.Active)
-      this.changedStates.Active = false;
+    if (this.changedState.Active) {
+      await this.maSetOnOff(c2, this.currentState.Active)
+      this.changedState.Active = false;
     } 
 
-    if (this.changedStates.TargetHeaterCoolerState) {
-      const mode = this.targetHeaterCoolerStateToMAMode(this.thermostatStates.TargetHeaterCoolerState);
+    if (this.changedState.TargetHeaterCoolerState) {
+      const mode = this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState);
       await this.maSetMode(c2, mode)
-      this.changedStates.TargetHeaterCoolerState = false;
+      this.changedState.TargetHeaterCoolerState = false;
     }
 
-    if (this.changedStates.CoolingThresholdTemperature) {
-      await this.maSetCoolingSetpoint(c2, this.thermostatStates.CoolingThresholdTemperature)
-      this.changedStates.CoolingThresholdTemperature = false;
+    if (this.changedState.CoolingThresholdTemperature) {
+      await this.maSetCoolingSetpoint(c2, this.currentState.CoolingThresholdTemperature)
+      this.changedState.CoolingThresholdTemperature = false;
     }
 
-    if (this.changedStates.HeatingThresholdTemperature) {
-      await this.maSetHeatingSetpoint(c2, this.thermostatStates.HeatingThresholdTemperature)
-      this.changedStates.HeatingThresholdTemperature = false;
+    if (this.changedState.HeatingThresholdTemperature) {
+      await this.maSetHeatingSetpoint(c2, this.currentState.HeatingThresholdTemperature)
+      this.changedState.HeatingThresholdTemperature = false;
     }
 
     const status = await this.sendCommand(c2, Buffer.from([0x05, 0x02, 0x00]));
@@ -244,19 +225,19 @@ export class MATouchPlatformAccessory {
   }
 
   async maSetOnOff(c, yorn) {
-    await this.maControlCommand(c, 0x01, 0x00, yorn ? 0x11 : 0x10, this.thermostatStates.CoolingThresholdTemperature, this.thermostatStates.HeatingThresholdTemperature)
+    await this.maControlCommand(c, 0x01, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature)
   }
 
   async maSetMode(c, mode) {
-    await this.maControlCommand(c, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.thermostatStates.TargetHeaterCoolerState), this.thermostatStates.CoolingThresholdTemperature, this.thermostatStates.HeatingThresholdTemperature)
+    await this.maControlCommand(c, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature)
   }
 
   async maSetCoolingSetpoint(c, coolingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.thermostatStates.TargetHeaterCoolerState), coolingSetpoint, this.thermostatStates.HeatingThresholdTemperature)
+    await this.maControlCommand(c, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), coolingSetpoint, this.currentState.HeatingThresholdTemperature)
   }
 
   async maSetHeatingSetpoint(c, heatingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x02, this.targetHeaterCoolerStateToMAMode(this.thermostatStates.TargetHeaterCoolerState), this.thermostatStates.CoolingThresholdTemperature, heatingSetpoint)
+    await this.maControlCommand(c, 0x00, 0x02, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, heatingSetpoint)
   }
 
   // MARK: - Status
@@ -272,83 +253,83 @@ export class MATouchPlatformAccessory {
     case 0x78: // off (x78: auto, x10:heat, x08:cool)
     case 0x10: 
     case 0x08: 
-      this.thermostatStates.Active = this.platform.Characteristic.Active.INACTIVE
+      this.currentState.Active = this.platform.Characteristic.Active.INACTIVE
       break;
     case 0x02: // fan
       break;
     case 0x32: // dry
       break;
     case 0x12: // heat
-      this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
-      this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
+      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE
+      this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
       break;
     case 0x0a: // cool
-      this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
-      this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
+      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE
+      this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
       break;
     case 0x7a: // auto
-      this.thermostatStates.Active = this.platform.Characteristic.Active.ACTIVE
-      this.thermostatStates.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
+      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE
+      this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
       break;
     default:
       this.platform.log.error('Unexpected mode:', mode)
       break;
     }
-    this.platform.log.info('Active:', this.thermostatStates.Active);
-    this.service.updateCharacteristic(this.platform.Characteristic.Active, this.thermostatStates.Active);
-    this.platform.log.info('TargetHeaterCoolerState:', this.thermostatStates.TargetHeaterCoolerState);
-    this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.thermostatStates.TargetHeaterCoolerState);
+    this.platform.log.info('Active:', this.currentState.Active);
+    this.service.updateCharacteristic(this.platform.Characteristic.Active, this.currentState.Active);
+    this.platform.log.info('TargetHeaterCoolerState:', this.currentState.TargetHeaterCoolerState);
+    this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.currentState.TargetHeaterCoolerState);
 
     const targetCoolTemp = this.rawHexToDec(data, 28);
     this.platform.log.info('CoolingThresholdTemperature:', targetCoolTemp);
-    this.thermostatStates.CoolingThresholdTemperature = targetCoolTemp;
-    this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature, this.thermostatStates.CoolingThresholdTemperature);
+    this.currentState.CoolingThresholdTemperature = targetCoolTemp;
+    this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature, this.currentState.CoolingThresholdTemperature);
 
     const targetHeatTemp = this.rawHexToDec(data, 30);
     this.platform.log.info('HeatingThresholdTemperature:', targetHeatTemp);
-    this.thermostatStates.HeatingThresholdTemperature = targetHeatTemp;
-    this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.thermostatStates.HeatingThresholdTemperature);
+    this.currentState.HeatingThresholdTemperature = targetHeatTemp;
+    this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.currentState.HeatingThresholdTemperature);
 
     const currentTemp = this.rawHexToDec(data, 45);
     this.platform.log.info('CurrentTemperature:', currentTemp);
-    this.thermostatStates.CurrentTemperature = currentTemp;
-    this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.thermostatStates.CurrentTemperature);
+    this.currentState.CurrentTemperature = currentTemp;
+    this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentState.CurrentTemperature);
 
-    if (this.thermostatStates.Active == this.platform.Characteristic.Active.ACTIVE) {
-      switch (this.thermostatStates.TargetHeaterCoolerState) {
+    if (this.currentState.Active == this.platform.Characteristic.Active.ACTIVE) {
+      switch (this.currentState.TargetHeaterCoolerState) {
       case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
-        this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+        this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
         break;
       case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
-        this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+        this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
         break;
       case this.platform.Characteristic.TargetHeaterCoolerState.AUTO:
-        if (this.thermostatStates.TargetHeaterCoolerState < this.thermostatStates.CurrentTemperature) {
-          this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
-        } else if (this.thermostatStates.TargetHeaterCoolerState > this.thermostatStates.CurrentTemperature) {
-          this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+        if (this.currentState.TargetHeaterCoolerState < this.currentState.CurrentTemperature) {
+          this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+        } else if (this.currentState.TargetHeaterCoolerState > this.currentState.CurrentTemperature) {
+          this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
         } else {
-          this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+          this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
         }
         break;
       }
       // const state = data.readUInt8(1);
       // switch (state) {
       // case 0x04: // heat
-      //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+      //   this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
       //   break;
       // case 0x06: // cool
-      //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+      //   this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
       //   break;
       // default:
-      //   this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+      //   this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
       //   break;
       // }
     } else {
-      this.thermostatStates.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+      this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
     }
-    this.platform.log.info('CurrentHeaterCoolerState:', this.thermostatStates.CurrentHeaterCoolerState);
-    this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.thermostatStates.CurrentHeaterCoolerState);
+    this.platform.log.info('CurrentHeaterCoolerState:', this.currentState.CurrentHeaterCoolerState);
+    this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.currentState.CurrentHeaterCoolerState);
   }
 
   // MARK: - Utility
@@ -396,7 +377,7 @@ export class MATouchPlatformAccessory {
   handleActiveGet() {
     this.platform.log.debug('Triggered GET Active');
 
-    return this.thermostatStates.Active;
+    return this.currentState.Active;
   }
 
    /**
@@ -405,9 +386,10 @@ export class MATouchPlatformAccessory {
   handleActiveSet(value) {
     this.platform.log.debug('Triggered SET Active');
 
-    if (this.thermostatStates.Active != value) {
-      this.thermostatStates.Active = value;
-      this.changedStates.Active = true;
+    if (this.currentState.Active != value) {
+      this.currentState.Active = value;
+      this.changedState.Active = true;
+      this.update();
     }
   }
 
@@ -417,7 +399,7 @@ export class MATouchPlatformAccessory {
   handleCurrentHeaterCoolerStateGet() {
     this.platform.log.debug('Triggered GET CurrentHeaterCoolerState');
 
-    return this.thermostatStates.CurrentHeaterCoolerState;
+    return this.currentState.CurrentHeaterCoolerState;
   }
 
   /**
@@ -426,7 +408,7 @@ export class MATouchPlatformAccessory {
   handleTargetHeaterCoolerStateGet() {
     this.platform.log.debug('Triggered GET TargetHeaterCoolerState');
 
-    return this.thermostatStates.TargetHeaterCoolerState;
+    return this.currentState.TargetHeaterCoolerState;
   }
 
   /**
@@ -435,9 +417,10 @@ export class MATouchPlatformAccessory {
   handleTargetHeaterCoolerStateSet(value) {
     this.platform.log.debug('Triggered SET TargetHeaterCoolerState:', value);
 
-    if (this.thermostatStates.TargetHeaterCoolerState != value) {
-      this.thermostatStates.TargetHeaterCoolerState = value;
-      this.changedStates.TargetHeaterCoolerState = true;
+    if (this.currentState.TargetHeaterCoolerState != value) {
+      this.currentState.TargetHeaterCoolerState = value;
+      this.changedState.TargetHeaterCoolerState = true;
+      this.update();
     }
   }
 
@@ -447,7 +430,7 @@ export class MATouchPlatformAccessory {
   handleCurrentTemperatureGet() {
     this.platform.log.debug('Triggered GET CurrentTemperature');
 
-    return this.thermostatStates.CurrentTemperature;
+    return this.currentState.CurrentTemperature;
   }
 
 
@@ -457,7 +440,7 @@ export class MATouchPlatformAccessory {
   handleCoolingThresholdTemperatureGet() {
     this.platform.log.debug('Triggered GET CoolingThresholdTemperature');
 
-    return this.thermostatStates.CoolingThresholdTemperature;
+    return this.currentState.CoolingThresholdTemperature;
   }
 
   /**
@@ -466,9 +449,10 @@ export class MATouchPlatformAccessory {
   handleCoolingThresholdTemperatureSet(value) {
     this.platform.log.debug('Triggered SET CoolingThresholdTemperature:', value);
 
-    if (this.thermostatStates.CoolingThresholdTemperature != value) {
-      this.thermostatStates.CoolingThresholdTemperature = value;
-      this.changedStates.CoolingThresholdTemperature = true;
+    if (this.currentState.CoolingThresholdTemperature != value) {
+      this.currentState.CoolingThresholdTemperature = value;
+      this.changedState.CoolingThresholdTemperature = true;
+      this.update();
     }
   }
 
@@ -478,7 +462,7 @@ export class MATouchPlatformAccessory {
   handleHeatingThresholdTemperatureGet() {
     this.platform.log.debug('Triggered GET HeatingThresholdTemperature');
 
-    return this.thermostatStates.HeatingThresholdTemperature;
+    return this.currentState.HeatingThresholdTemperature;
   }
 
   /**
@@ -487,9 +471,10 @@ export class MATouchPlatformAccessory {
   handleHeatingThresholdTemperatureSet(value) {
     this.platform.log.debug('Triggered SET HeatingThresholdTemperature:', value);
 
-    if (this.thermostatStates.HeatingThresholdTemperature != value) {
-      this.thermostatStates.HeatingThresholdTemperature = value;
-      this.changedStates.HeatingThresholdTemperature = true;
+    if (this.currentState.HeatingThresholdTemperature != value) {
+      this.currentState.HeatingThresholdTemperature = value;
+      this.changedState.HeatingThresholdTemperature = true;
+      this.update();
     }
   }
 
