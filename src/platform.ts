@@ -52,8 +52,15 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
   discoverDevices() {
     noble.on('stateChange', async (state) => {
       if (state === 'poweredOn') {
-        this.log.info('Starting BLE scan...');
+        this.log.info('Starting BLE discovery...');
         await noble.startScanningAsync([], false);
+        
+        /*if (this.config.stopDiscovery === true) {
+          setTimeout(() => {
+            this.log.info('Stopping BLE discovery...');
+            noble.stopScanning();
+          }, 15000);
+        }*/
       }
     });
 
