@@ -94,94 +94,99 @@ export class MATouchPlatformAccessory {
     }
 
     this.platform.log.debug('Connecting...');
-    await this.peripheral.connectAsync();
 
-    const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18-e796-11e6-bf01-fe55135034f3'],
-      [
-        '799e3b22-e797-11e6-bf01-fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
-        'def9382a-e795-11e6-bf01-fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015
-        'e48c1528-e795-11e6-bf01-fe55135034f3', // handle = 0x0016, char properties = 0x0c, char value handle = 0x0017
-        'ea1ea690-e795-11e6-bf01-fe55135034f3', // handle = 0x0018, char properties = 0x10, char value handle = 0x0019
-      ]);
+    try {
+      await this.peripheral.connectAsync();
 
-    const c0 = characteristics[0];
-    const v0 = await c0.readAsync();
-    const expectedV0 = Buffer.from([0x30, 0x31, 0x2e, 0x30, 0x30, 0x2e, 0x30, 0x30]);
-    this.platform.log.debug('Read c0:', v0);
-    if (Buffer.compare(v0, expectedV0) !== 0) {
-      this.platform.log.error('Unexpected c0 value:', v0);
-    }
+      const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18-e796-11e6-bf01-fe55135034f3'],
+        [
+          '799e3b22-e797-11e6-bf01-fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
+          'def9382a-e795-11e6-bf01-fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015
+          'e48c1528-e795-11e6-bf01-fe55135034f3', // handle = 0x0016, char properties = 0x0c, char value handle = 0x0017
+          'ea1ea690-e795-11e6-bf01-fe55135034f3', // handle = 0x0018, char properties = 0x10, char value handle = 0x0019
+        ]);
 
-    const c1 = characteristics[1];
-    const v1 = await c1.readAsync();
-    const expectedV1 = Buffer.from([0x43, 0x54, 0x30, 0x31, 0x4d, 0x41, 0x55, 0x5f, 0x30,
-      0x31, 0x2e, 0x36, 0x31, 0x00, 0x00, 0x00, 0x00, 0x41]);
-    this.platform.log.debug('Read c1:', v1);
-    if (Buffer.compare(v1, expectedV1) !== 0) {
-      this.platform.log.error('Unexpected c1 value:', v1);
-    }
-
-    const c3 = characteristics[3];
-    c3.notify(true);
-
-    c3.on('data', async (data) => {
-      this.platform.log.debug('Received:', this.receiveLength, data);
-
-      if (this.receiveLength === 0) {
-        const len = data.readUInt8();
-        // TODO: check checksum, maybe trim it off the message
-        this.receiveBuffer = Buffer.alloc(len);
-        data.copy(this.receiveBuffer, 0, 2);
-        this.receiveLength += data.length - 2;
-      } else {
-        data.copy(this.receiveBuffer, this.receiveLength);
-        this.receiveLength += data.length;
+      const c0 = characteristics[0];
+      const v0 = await c0.readAsync();
+      const expectedV0 = Buffer.from([0x30, 0x31, 0x2e, 0x30, 0x30, 0x2e, 0x30, 0x30]);
+      this.platform.log.debug('Read c0:', v0);
+      if (Buffer.compare(v0, expectedV0) !== 0) {
+        this.platform.log.error('Unexpected c0 value:', v0);
       }
 
-      if (this.receiveBuffer.length === this.receiveLength) {
-        await this.receivedMessage(this.receiveBuffer);
-        this.receiveLength = 0;
+      const c1 = characteristics[1];
+      const v1 = await c1.readAsync();
+      const expectedV1 = Buffer.from([0x43, 0x54, 0x30, 0x31, 0x4d, 0x41, 0x55, 0x5f, 0x30,
+        0x31, 0x2e, 0x36, 0x31, 0x00, 0x00, 0x00, 0x00, 0x41]);
+      this.platform.log.debug('Read c1:', v1);
+      if (Buffer.compare(v1, expectedV1) !== 0) {
+        this.platform.log.error('Unexpected c1 value:', v1);
       }
-    });
 
-    // let's talk...
-    const c2 = characteristics[2];
-    await this.sendCommand(c2, Buffer.from([0x01, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x03, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x05, 0x00, 0x00])); // not sure?
-    await this.sendCommand(c2, Buffer.from([0x03, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      const c3 = characteristics[3];
+      c3.notify(true);
 
-    if (this.changedState.Active) {
-      await this.maSetOnOff(c2, this.currentState.Active);
-      this.changedState.Active = false;
+      c3.on('data', async (data) => {
+        this.platform.log.debug('Received:', this.receiveLength, data);
+
+        if (this.receiveLength === 0) {
+          const len = data.readUInt8();
+          // TODO: check checksum, maybe trim it off the message
+          this.receiveBuffer = Buffer.alloc(len);
+          data.copy(this.receiveBuffer, 0, 2);
+          this.receiveLength += data.length - 2;
+        } else {
+          data.copy(this.receiveBuffer, this.receiveLength);
+          this.receiveLength += data.length;
+        }
+
+        if (this.receiveBuffer.length === this.receiveLength) {
+          await this.receivedMessage(this.receiveBuffer);
+          this.receiveLength = 0;
+        }
+      });
+
+      // let's talk...
+      const c2 = characteristics[2];
+      await this.sendCommand(c2, Buffer.from([0x01, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(c2, Buffer.from([0x03, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(c2, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(c2, Buffer.from([0x05, 0x00, 0x00])); // not sure?
+      await this.sendCommand(c2, Buffer.from([0x03, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+
+      if (this.changedState.Active) {
+        await this.maSetOnOff(c2, this.currentState.Active);
+        this.changedState.Active = false;
+      }
+
+      if (this.changedState.TargetHeaterCoolerState) {
+        const mode = this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState);
+        await this.maSetMode(c2, mode);
+        this.changedState.TargetHeaterCoolerState = false;
+      }
+
+      if (this.changedState.CoolingThresholdTemperature) {
+        await this.maSetCoolingSetpoint(c2, this.currentState.CoolingThresholdTemperature);
+        this.changedState.CoolingThresholdTemperature = false;
+      }
+
+      if (this.changedState.HeatingThresholdTemperature) {
+        await this.maSetHeatingSetpoint(c2, this.currentState.HeatingThresholdTemperature);
+        this.changedState.HeatingThresholdTemperature = false;
+      }
+
+      const status = await this.sendCommand(c2, Buffer.from([0x05, 0x02, 0x00]));
+      await this.processStatus(status);
+
+      await this.sendCommand(c2, Buffer.from([0x03, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(c2, Buffer.from([0x01, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(c2, Buffer.from([0x03, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      this.platform.log.debug('Disconnecting!');
+      await this.peripheral.disconnectAsync();
+    } catch (error) {
+      this.platform.log.error('Caught an error in update():', error);
     }
-
-    if (this.changedState.TargetHeaterCoolerState) {
-      const mode = this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState);
-      await this.maSetMode(c2, mode);
-      this.changedState.TargetHeaterCoolerState = false;
-    }
-
-    if (this.changedState.CoolingThresholdTemperature) {
-      await this.maSetCoolingSetpoint(c2, this.currentState.CoolingThresholdTemperature);
-      this.changedState.CoolingThresholdTemperature = false;
-    }
-
-    if (this.changedState.HeatingThresholdTemperature) {
-      await this.maSetHeatingSetpoint(c2, this.currentState.HeatingThresholdTemperature);
-      this.changedState.HeatingThresholdTemperature = false;
-    }
-
-    const status = await this.sendCommand(c2, Buffer.from([0x05, 0x02, 0x00]));
-    await this.processStatus(status);
-
-    await this.sendCommand(c2, Buffer.from([0x03, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x01, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x03, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-    this.platform.log.debug('Disconnecting!');
-    await this.peripheral.disconnectAsync();
   }
 
   // MARK: - Comm
