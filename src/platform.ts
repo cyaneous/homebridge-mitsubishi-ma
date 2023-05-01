@@ -3,7 +3,7 @@ import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { MATouchPlatformAccessory } from './platformAccessory';
 
-const noble = require('@abandonware/noble');
+import noble from '@abandonware/noble';
 
 /**
  * HomebridgePlatform
