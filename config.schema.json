@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "MATouchPlatform",
+  "pluginAlias": "MATouch",
   "pluginType": "platform",
   "singular": true,
   "schema": {

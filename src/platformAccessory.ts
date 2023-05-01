@@ -298,14 +298,14 @@ export class MATouchPlatformAccessory {
     if (this.currentState.Active == this.platform.Characteristic.Active.ACTIVE) {
       switch (this.currentState.TargetHeaterCoolerState) {
       case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
-        if (this.currentState.CurrentTemperature < this.currentState.HeatingThresholdTemperature) {
+        if (this.currentState.CurrentTemperature <= this.currentState.HeatingThresholdTemperature) {
           this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
         } else {
           this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
         }
         break;
       case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
-        if (this.currentState.CurrentTemperature > this.currentState.CoolingThresholdTemperature) {
+        if (this.currentState.CurrentTemperature >= this.currentState.CoolingThresholdTemperature) {
           this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
         } else {
           this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
