@@ -11,7 +11,7 @@ export class MATouchPlatformAccessory {
   private service: Service;
   private pin: Buffer;
   private updateTimeout: ReturnType<typeof setTimeout>;
-  private msgid: number = 0;
+  private msgid = 0;
   private receiveLength = 0;
   private receiveBuffer;
   private receiveResolve;
@@ -91,11 +91,11 @@ export class MATouchPlatformAccessory {
     } else {
       this.updateTimeout = setTimeout(async () => await this.update(), 10000);
     }
-    
-    this.platform.log.info('Connecting...');
+
+    this.platform.log.debug('Connecting...');
     await this.peripheral.connectAsync();
 
-    const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18-e796-11e6-bf01-fe55135034f3'], 
+    const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18-e796-11e6-bf01-fe55135034f3'],
       [
         '799e3b22-e797-11e6-bf01-fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013, uuid = 799e3b22-e797-11e6-bf01-fe55135034f3
         'def9382a-e795-11e6-bf01-fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015, uuid = def9382a-e795-11e6-bf01-fe55135034f3
@@ -112,14 +112,15 @@ export class MATouchPlatformAccessory {
     const c1 = characteristics[1];
     const v1 = await c1.readAsync();
     this.platform.log.debug("Read c1:", v1);
-    if (Buffer.compare(v1, Buffer.from([0x43, 0x54, 0x30, 0x31, 0x4d, 0x41, 0x55, 0x5f, 0x30, 0x31, 0x2e, 0x36, 0x31, 0x00, 0x00, 0x00, 0x00, 0x41])) != 0)
+    if (Buffer.compare(v1, Buffer.from([0x43, 0x54, 0x30, 0x31, 0x4d, 0x41, 0x55, 0x5f, 0x30, 0x31, 0x2e, 0x36, 0x31, 0x00, 0x00, 0x00, 0x00, 0x41])) != 0) {
       this.platform.log.error('Unexpected c1 value:', v1);
+    }
 
     const c3 = characteristics[3];
     c3.notify(true);
 
     c3.on('data', async (data, notify) => {
-      this.platform.log.info('Received:', this.receiveLength, data);
+      this.platform.log.debug('Received:', this.receiveLength, data);
 
       if (this.receiveLength == 0) {
         const len = data.readUInt8();
@@ -148,23 +149,23 @@ export class MATouchPlatformAccessory {
     await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
     
     if (this.changedState.Active) {
-      await this.maSetOnOff(c2, this.currentState.Active)
+      await this.maSetOnOff(c2, this.currentState.Active);
       this.changedState.Active = false;
-    } 
+    }
 
     if (this.changedState.TargetHeaterCoolerState) {
       const mode = this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState);
-      await this.maSetMode(c2, mode)
+      await this.maSetMode(c2, mode);
       this.changedState.TargetHeaterCoolerState = false;
     }
 
     if (this.changedState.CoolingThresholdTemperature) {
-      await this.maSetCoolingSetpoint(c2, this.currentState.CoolingThresholdTemperature)
+      await this.maSetCoolingSetpoint(c2, this.currentState.CoolingThresholdTemperature);
       this.changedState.CoolingThresholdTemperature = false;
     }
 
     if (this.changedState.HeatingThresholdTemperature) {
-      await this.maSetHeatingSetpoint(c2, this.currentState.HeatingThresholdTemperature)
+      await this.maSetHeatingSetpoint(c2, this.currentState.HeatingThresholdTemperature);
       this.changedState.HeatingThresholdTemperature = false;
     }
 
@@ -174,7 +175,7 @@ export class MATouchPlatformAccessory {
     await this.sendCommand(c2, Buffer.from([0x03, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
     await this.sendCommand(c2, Buffer.from([0x01, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
     await this.sendCommand(c2, Buffer.from([0x03, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-    this.platform.log.info('Disconnecting!');
+    this.platform.log.debug('Disconnecting!');
     await this.peripheral.disconnectAsync(); 
   }
 
@@ -183,16 +184,16 @@ export class MATouchPlatformAccessory {
   // [2: length] [1: msgid] [l: body] [2: cksum]
   async sendCommand(characteristic, body) : Promise<Buffer> {
     // await this.delay(500);
-    return new Promise<Buffer>((resolve, reject) => { 
-      var buffer = Buffer.alloc(2 + 1 + body.length + 2);
+    return new Promise<Buffer>((resolve, reject) => {
+      const buffer = Buffer.alloc(2 + 1 + body.length + 2);
       buffer.writeUInt16LE(1 + body.length + 2, 0);
       buffer.writeUInt8(this.msgid, 2);
       body.copy(buffer, 3);
       buffer.writeUInt16LE(this.checksum(buffer), buffer.length - 2);
-      //this.platform.log.info('Full packet:', buffer, buffer.length);
+      //this.platform.log.debug('Full packet:', buffer, buffer.length);
       for (let i = 0; i < buffer.length; i += 20) {
         const part = buffer.slice(i, Math.min(buffer.length, i + 20));
-        this.platform.log.info('Sent:', part, i, buffer.length - i)
+        this.platform.log.debug('Sent:', part, i, buffer.length - i);
         characteristic.write(part, true); // TODO: handle thrown errors here and other places
       }
       this.msgid += 1; 
@@ -221,30 +222,30 @@ export class MATouchPlatformAccessory {
     // cool setp: 05 0101 0001 0009 4002 1002 9001 4002 9001 6400 00
     const cool = this.rawDecToHex(coolSetpoint);
     const heat = this.rawDecToHex(heatSetpoint);
-    await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, 0x00, mode, cool[0], cool[1],  heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, 0x64, 0x00, 0x00]));
+    await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, 0x00, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, 0x64, 0x00, 0x00]));
   }
 
   async maSetOnOff(c, yorn) {
-    await this.maControlCommand(c, 0x01, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature)
+    await this.maControlCommand(c, 0x01, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature);
   }
 
   async maSetMode(c, mode) {
-    await this.maControlCommand(c, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature)
+    await this.maControlCommand(c, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature);
   }
 
   async maSetCoolingSetpoint(c, coolingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), coolingSetpoint, this.currentState.HeatingThresholdTemperature)
+    await this.maControlCommand(c, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), coolingSetpoint, this.currentState.HeatingThresholdTemperature);
   }
 
   async maSetHeatingSetpoint(c, heatingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x02, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, heatingSetpoint)
+    await this.maControlCommand(c, 0x00, 0x02, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, heatingSetpoint);
   }
 
   // MARK: - Status
 
   async processStatus(data) {
     if (data.readUInt8(1) != 0x05 || data.length != 0x35) {
-      this.platform.log.error('Invalid status reply:', data)
+      this.platform.log.error('Invalid status reply:', data);
       return;
     }
 
@@ -253,45 +254,45 @@ export class MATouchPlatformAccessory {
     case 0x78: // off (x78: auto, x10:heat, x08:cool)
     case 0x10: 
     case 0x08: 
-      this.currentState.Active = this.platform.Characteristic.Active.INACTIVE
+      this.currentState.Active = this.platform.Characteristic.Active.INACTIVE;
       break;
     case 0x02: // fan
       break;
     case 0x32: // dry
       break;
     case 0x12: // heat
-      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE
+      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE;
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
       break;
     case 0x0a: // cool
-      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE
+      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE;
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
       break;
     case 0x7a: // auto
-      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE
+      this.currentState.Active = this.platform.Characteristic.Active.ACTIVE;
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
       break;
     default:
-      this.platform.log.error('Unexpected mode:', mode)
+      this.platform.log.error('Unexpected mode:', mode);
       break;
     }
-    this.platform.log.info('Active:', this.currentState.Active);
+    this.platform.log.debug('Active:', this.currentState.Active);
     this.service.updateCharacteristic(this.platform.Characteristic.Active, this.currentState.Active);
-    this.platform.log.info('TargetHeaterCoolerState:', this.currentState.TargetHeaterCoolerState);
+    this.platform.log.debug('TargetHeaterCoolerState:', this.currentState.TargetHeaterCoolerState);
     this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.currentState.TargetHeaterCoolerState);
 
     const targetCoolTemp = this.rawHexToDec(data, 28);
-    this.platform.log.info('CoolingThresholdTemperature:', targetCoolTemp);
+    this.platform.log.debug('CoolingThresholdTemperature:', targetCoolTemp);
     this.currentState.CoolingThresholdTemperature = targetCoolTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature, this.currentState.CoolingThresholdTemperature);
 
     const targetHeatTemp = this.rawHexToDec(data, 30);
-    this.platform.log.info('HeatingThresholdTemperature:', targetHeatTemp);
+    this.platform.log.debug('HeatingThresholdTemperature:', targetHeatTemp);
     this.currentState.HeatingThresholdTemperature = targetHeatTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.currentState.HeatingThresholdTemperature);
 
     const currentTemp = this.rawHexToDec(data, 45);
-    this.platform.log.info('CurrentTemperature:', currentTemp);
+    this.platform.log.debug('CurrentTemperature:', currentTemp);
     this.currentState.CurrentTemperature = currentTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentState.CurrentTemperature);
 
@@ -336,7 +337,7 @@ export class MATouchPlatformAccessory {
     } else {
       this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.INACTIVE;
     }
-    this.platform.log.info('CurrentHeaterCoolerState:', this.currentState.CurrentHeaterCoolerState);
+    this.platform.log.debug('CurrentHeaterCoolerState:', this.currentState.CurrentHeaterCoolerState);
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.currentState.CurrentHeaterCoolerState);
   }
 
@@ -356,7 +357,7 @@ export class MATouchPlatformAccessory {
     const a = Math.trunc(n / 10); // 1
     const b = Math.trunc(n % 10); // 9
     const c = n * 10 % 10; // 5
-    var buffer = Buffer.alloc(2);
+    const buffer = Buffer.alloc(2);
     buffer.writeUInt8(a, 1);
     buffer.writeUInt8((b << 4) + c, 0);
     return buffer;
