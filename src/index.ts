@@ -1,11 +1,11 @@
 import { API } from 'homebridge';
 
 import { PLATFORM_NAME } from './settings';
-import { MATouchHomebridgePlatform } from './platform';
+import { MATouchPlatform } from './platform';
 
 /**
  * This method registers the platform with Homebridge
  */
 export = (api: API) => {
-  api.registerPlatform(PLATFORM_NAME, MATouchHomebridgePlatform);
+  api.registerPlatform(PLATFORM_NAME, MATouchPlatform);
 };

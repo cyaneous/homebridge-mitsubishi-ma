@@ -1,5 +1,5 @@
 import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
-import { MATouchHomebridgePlatform } from './platform';
+import { MATouchPlatform } from './platform';
 import type { Peripheral } from '@abandonware/noble';
 
 /**
@@ -9,6 +9,7 @@ import type { Peripheral } from '@abandonware/noble';
  */
 export class MATouchPlatformAccessory {
   private service: Service;
+  private pin: Buffer;
   private updateTimeout: ReturnType<typeof setTimeout>;
   private msgid: number = 0;
   private receiveLength = 0;
@@ -32,7 +33,7 @@ export class MATouchPlatformAccessory {
   };
 
   constructor(
-    private readonly platform: MATouchHomebridgePlatform,
+    private readonly platform: MATouchPlatform,
     private readonly accessory: PlatformAccessory,
     private readonly peripheral: Peripheral,
   ) {
@@ -71,6 +72,8 @@ export class MATouchPlatformAccessory {
       .onGet(this.handleCoolingThresholdTemperatureGet.bind(this))
       .onSet(this.handleCoolingThresholdTemperatureSet.bind(this));
   
+    this.pin = this.pinToHex(this.platform.config.pin || 0);
+
     // Update characteristics values asynchronously
     this.updateTimeout = setTimeout(async () => await this.update(), 250);
   }
@@ -135,17 +138,14 @@ export class MATouchPlatformAccessory {
       }
     });
 
-    const pinA = 0x23;
-    const pinB = 0x23;
-
     // let's talk...
     const c2 = characteristics[2];
-    await this.sendCommand(c2, Buffer.from([0x01, 0x00, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x03, 0x00, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x01, 0x03, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
+    await this.sendCommand(c2, Buffer.from([0x01, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+    await this.sendCommand(c2, Buffer.from([0x03, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+    await this.sendCommand(c2, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
     await this.sendCommand(c2, Buffer.from([0x05, 0x00, 0x00])); // not sure?
-    await this.sendCommand(c2, Buffer.from([0x03, 0x03, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
+    await this.sendCommand(c2, Buffer.from([0x03, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+    await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
     
     if (this.changedState.Active) {
       await this.maSetOnOff(c2, this.currentState.Active)
@@ -171,9 +171,9 @@ export class MATouchPlatformAccessory {
     const status = await this.sendCommand(c2, Buffer.from([0x05, 0x02, 0x00]));
     await this.processStatus(status);
 
-    await this.sendCommand(c2, Buffer.from([0x03, 0x04, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x01, 0x01, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
-    await this.sendCommand(c2, Buffer.from([0x03, 0x01, 0x01, pinB, pinA, 0x00, 0x00, 0x00]));
+    await this.sendCommand(c2, Buffer.from([0x03, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+    await this.sendCommand(c2, Buffer.from([0x01, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+    await this.sendCommand(c2, Buffer.from([0x03, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
     this.platform.log.info('Disconnecting!');
     await this.peripheral.disconnectAsync(); 
   }
@@ -212,11 +212,11 @@ export class MATouchPlatformAccessory {
   async maControlCommand(c, flagsA, flagsB, mode, coolSetpoint, heatSetpoint) {
     // off:       05 0101 0100 0010 4502 1002 9001 4002 9001 6400 00
     // on:        05 0101 0100 0011 4502 1002 9001 4002 9001 6400 00
-    // mode auto: 05 0101 0200 0079 5002 1002 9001 4002 9001 6400 00
-    // mode cool: 05 0101 0200 0009 5002 1002 9001 4002 9001 6400 00
-    // mode heat: 05 0101 0200 0011 5002 1002 9001 4002 9001 6400 00
-    // mode dry:  05 0101 0200 0031 5002 1002 9001 4002 9001 6400 00
-    // mode fan:  05 0101 0200 0001 5002 1002 9001 4002 9001 6400 00
+    // mode auto: 05 0101 0200 0079 4502 1002 9001 4002 9001 6400 00
+    // mode cool: 05 0101 0200 0009 4502 1002 9001 4002 9001 6400 00
+    // mode heat: 05 0101 0200 0011 4502 1002 9001 4002 9001 6400 00
+    // mode dry:  05 0101 0200 0031 4502 1002 9001 4002 9001 6400 00
+    // mode fan:  05 0101 0200 0001 4502 1002 9001 4002 9001 6400 00
     // heat setp: 05 0101 0002 0011 4502 2002 9001 4002 9001 6400 00
     // cool setp: 05 0101 0001 0009 4002 1002 9001 4002 9001 6400 00
     const cool = this.rawDecToHex(coolSetpoint);
@@ -298,24 +298,32 @@ export class MATouchPlatformAccessory {
     if (this.currentState.Active == this.platform.Characteristic.Active.ACTIVE) {
       switch (this.currentState.TargetHeaterCoolerState) {
       case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
-        this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+        if (this.currentState.CurrentTemperature < this.currentState.HeatingThresholdTemperature) {
+          this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+        } else {
+          this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+        }
         break;
       case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
-        this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+        if (this.currentState.CurrentTemperature > this.currentState.CoolingThresholdTemperature) {
+          this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+        } else {
+          this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+        }
         break;
       case this.platform.Characteristic.TargetHeaterCoolerState.AUTO:
-        if (this.currentState.TargetHeaterCoolerState < this.currentState.CurrentTemperature) {
+        if (this.currentState.CurrentTemperature < this.currentState.HeatingThresholdTemperature) {
           this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
-        } else if (this.currentState.TargetHeaterCoolerState > this.currentState.CurrentTemperature) {
+        } else if (this.currentState.CurrentTemperature > this.currentState.CoolingThresholdTemperature) {
           this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
         } else {
           this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
         }
         break;
       }
-      // const state = data.readUInt8(1);
+      // const state = data.readUInt8(45);
       // switch (state) {
-      // case 0x04: // heat
+      // case 0x15: // heat
       //   this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
       //   break;
       // case 0x06: // cool
@@ -326,7 +334,7 @@ export class MATouchPlatformAccessory {
       //   break;
       // }
     } else {
-      this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+      this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.INACTIVE;
     }
     this.platform.log.info('CurrentHeaterCoolerState:', this.currentState.CurrentHeaterCoolerState);
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.currentState.CurrentHeaterCoolerState);
@@ -339,7 +347,7 @@ export class MATouchPlatformAccessory {
   }
 
   rawHexToDec(buffer: Buffer, offset: number) : number {
-    const a = buffer.readUInt8(offset+1); // 01
+    const a = buffer.readUInt8(offset + 1); // 01
     const b = buffer.readUInt8(offset); // 95
     return (((a & 0xf)*100)+((b >> 4)*10)+(b & 0xf))/10.0;
   }
@@ -350,7 +358,18 @@ export class MATouchPlatformAccessory {
     const c = n * 10 % 10; // 5
     var buffer = Buffer.alloc(2);
     buffer.writeUInt8(a, 1);
-    buffer.writeUInt8((b << 4)+c, 0);
+    buffer.writeUInt8((b << 4) + c, 0);
+    return buffer;
+  }
+
+  pinToHex(n: number) : Buffer {
+    const a = Math.trunc(n / 1000); // 1
+    const b = Math.trunc(n / 100 % 10); // 2
+    const c = Math.trunc(n / 10 % 10); // 3
+    const d = n % 10; // 4
+    const buffer = Buffer.alloc(2);
+    buffer.writeUInt8((a << 4) + b, 1);
+    buffer.writeUInt8((c << 4) + d, 0);
     return buffer;
   }
 

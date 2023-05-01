@@ -1,15 +1,16 @@
 {
-  "pluginAlias": "HomebridgeMitsubishiMAPlugin",
+  "pluginAlias": "MATouchPlatform",
   "pluginType": "platform",
   "singular": true,
   "schema": {
     "type": "object",
     "properties": {
-      "name": {
-        "title": "Name",
-        "type": "string",
+      "pin": {
+        "title": "PIN",
+        "type": "integer",
         "required": true,
-        "default": "MA Thermostat"
+        "default": "0000",
+        "description": "The same PIN must be used for all thermostats."
       }
     }
   }

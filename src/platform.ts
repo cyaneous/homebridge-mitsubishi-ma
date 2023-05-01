@@ -10,7 +10,7 @@ const noble = require('@abandonware/noble');
  * This class is the main constructor for your plugin, this is where you should
  * parse the user config and discover/register accessories with Homebridge.
  */
-export class MATouchHomebridgePlatform implements DynamicPlatformPlugin {
+export class MATouchPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;
 
@@ -29,8 +29,6 @@ export class MATouchHomebridgePlatform implements DynamicPlatformPlugin {
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
     this.api.on('didFinishLaunching', () => {
-      log.debug('Executed didFinishLaunching callback');
-
       this.discoverDevices();
     });
   }
@@ -52,7 +50,6 @@ export class MATouchHomebridgePlatform implements DynamicPlatformPlugin {
    * must not be registered again to prevent "duplicate UUID" errors.
    */
   discoverDevices() {
-
     noble.on('stateChange', async (state) => {
       if (state === 'poweredOn') {
         await noble.startScanningAsync([/*'180f'*/], false);
