@@ -58,7 +58,7 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
 
     noble.on('discover', async (peripheral) => {
       if (peripheral.advertisement.localName !== undefined && peripheral.advertisement.localName.startsWith('M/R_CT01MAU')) {
-        this.log.info('Found an MA thermostat:', peripheral.advertisement.localName);
+        this.log.info('Found an MA Touch thermostat:', peripheral.advertisement.localName);
 
         // generate a unique id for the accessory this should be generated from
         // something globally unique, but constant, for example, the device serial
@@ -96,7 +96,7 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
           // the `context` property can be used to store any data about the accessory you may need
           // accessory.context.peripheral = peripheral;
 
-          // create the accessory handler for the newly create accessory
+          // create the accessory handler for the newly created accessory
           // this is imported from `platformAccessory.ts`
           new MATouchPlatformAccessory(this, accessory, peripheral);
 

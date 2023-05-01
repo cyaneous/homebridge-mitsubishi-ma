@@ -98,12 +98,12 @@ export class MATouchPlatformAccessory {
     try {
       await this.peripheral.connectAsync();
 
-      const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18-e796-11e6-bf01-fe55135034f3'],
+      const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18e79611e6bf01fe55135034f3'],
         [
-          '799e3b22-e797-11e6-bf01-fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
-          'def9382a-e795-11e6-bf01-fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015
-          'e48c1528-e795-11e6-bf01-fe55135034f3', // handle = 0x0016, char properties = 0x0c, char value handle = 0x0017
-          'ea1ea690-e795-11e6-bf01-fe55135034f3', // handle = 0x0018, char properties = 0x10, char value handle = 0x0019
+          '799e3b22e79711e6bf01fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
+          'def9382ae79511e6bf01fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015
+          'e48c1528e79511e6bf01fe55135034f3', // handle = 0x0016, char properties = 0x0c, char value handle = 0x0017
+          'ea1ea690e79511e6bf01fe55135034f3', // handle = 0x0018, char properties = 0x10, char value handle = 0x0019
         ]);
 
       const c0 = characteristics[0];
