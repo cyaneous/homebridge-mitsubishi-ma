@@ -57,7 +57,7 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
     });
 
     noble.on('discover', async (peripheral) => {
-      if (peripheral.advertisement.localName != undefined && peripheral.advertisement.localName.startsWith('M/R_CT01MAU')) {
+      if (peripheral.advertisement.localName !== undefined && peripheral.advertisement.localName.startsWith('M/R_CT01MAU')) {
         this.log.info('Found an MA thermostat:', peripheral.advertisement.localName);
 
         // generate a unique id for the accessory this should be generated from
