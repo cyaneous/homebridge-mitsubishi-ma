@@ -1,5 +1,6 @@
 # TODO
 
+- add an option to stop scanning for devices after startup?
 - heat/cool/idle status reporting
 - fan speed
 - vane/swing
