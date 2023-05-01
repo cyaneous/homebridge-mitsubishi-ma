@@ -1,5 +1,5 @@
 import { Service, PlatformAccessory, CharacteristicValue } from 'homebridge';
-import { ExampleHomebridgePlatform } from './platform';
+import { MATouchHomebridgePlatform } from './platform';
 import type { Peripheral } from '@abandonware/noble';
 
 /**
@@ -36,7 +36,7 @@ export class MATouchPlatformAccessory {
   };
 
   constructor(
-    private readonly platform: ExampleHomebridgePlatform,
+    private readonly platform: MATouchHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
     private readonly peripheral: Peripheral,
   ) {
