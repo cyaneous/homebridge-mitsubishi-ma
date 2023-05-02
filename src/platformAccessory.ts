@@ -1,4 +1,4 @@
-import { Service, PlatformAccessory } from 'homebridge';
+import { Service, PlatformAccessory, APIEvent } from 'homebridge';
 import { MATouchPlatform } from './platform';
 import type { Peripheral } from '@abandonware/noble';
 
@@ -77,6 +77,10 @@ export class MATouchPlatformAccessory {
 
     // Update characteristics values asynchronously
     this.updateTimeout = setTimeout(async () => await this.update(), 250);
+
+    this.platform.api.on(APIEvent.SHUTDOWN, () => {
+      clearTimeout(this.updateTimeout);
+    });
   }
 
   // MARK: - Updates
