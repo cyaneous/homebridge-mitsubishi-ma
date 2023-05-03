@@ -197,12 +197,12 @@ export class MATouchPlatformAccessory {
       }
 
       if (this.changedState.RotationSpeed) {
-        await this.maSetFanMode(c2, this.currentState.RotationSpeed);
+        await this.maSetFanMode(c2, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
         this.changedState.RotationSpeed = false;
       }
 
       if (this.changedState.SwingMode) {
-        await this.maSetVaneMode(c2, this.currentState.SwingMode);
+        await this.maSetVaneMode(c2, this.swingModeToMAVaneMode(this.currentState.SwingMode));
         this.changedState.SwingMode = false;
       }
 
@@ -246,13 +246,17 @@ export class MATouchPlatformAccessory {
 
   async receivedMessage(data) {
     this.platform.log.debug('Message:', data);
-    this.receiveResolve(data);
-    this.receiveResolve = undefined;
+    if (this.receiveResolve) {
+      this.receiveResolve(data);
+      this.receiveResolve = undefined;
+    } else {
+      this.platform.log.error('Received an unsolicited notification!');
+    }
   }
-
+ 
   // MARK: - Control
 
-  async maControlCommand(c, flagsA, flagsB, flagsC, mode, coolSetpoint, heatSetpoint, fanMode) {
+  async maControlCommand(c, flagsA, flagsB, flagsC, mode, coolSetpoint, heatSetpoint, vaneMode, fanMode) {
     // off:        05 0101 0100 0010 4502 1002 9001 4002 9001 6400 00
     // on:         05 0101 0100 0011 4502 1002 9001 4002 9001 6400 00
     // mode auto:  05 0101 0200 0079 4502 1002 9001 4002 9001 6400 00
@@ -266,33 +270,35 @@ export class MATouchPlatformAccessory {
     // fan high:   05 0101 0000 0111 4502 1002 9001 4002 9001 6300 00
     // fan medium: 05 0101 0000 0111 4502 1002 9001 4002 9001 6200 00
     // fan low:    05 0101 0000 0111 4502 1002 9001 4002 9001 6000 00
+    // vane auto:  05 0101 0000 0211 4502 1002 9001 4002 9001 6400 00
+    // vane swing: 05 0101 0000 0211 4502 1002 9001 4002 9001 7400 00 <-- so 7 is vane, 4 is fan
     const cool = this.rawDecToHex(coolSetpoint);
     const heat = this.rawDecToHex(heatSetpoint);
-    await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, flagsC, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, fanMode, 0x00, 0x00]));
+    await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, flagsC, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, (vaneMode << 4) + fanMode, 0x00, 0x00]));
   }
 
   async maSetOnOff(c, yorn) {
-    await this.maControlCommand(c, 0x01, 0x00, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+    await this.maControlCommand(c, 0x01, 0x00, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   async maSetMode(c, mode) {
-    await this.maControlCommand(c, 0x02, 0x00, 0x00, mode, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+    await this.maControlCommand(c, 0x02, 0x00, 0x00, mode, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   async maSetCoolingSetpoint(c, coolingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x01, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), coolingSetpoint, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+    await this.maControlCommand(c, 0x00, 0x01, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), coolingSetpoint, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   async maSetHeatingSetpoint(c, heatingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, heatingSetpoint, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+    await this.maControlCommand(c, 0x00, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, heatingSetpoint, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   async maSetFanMode(c, rotationSpeed) {
-    await this.maControlCommand(c, 0x00, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+    await this.maControlCommand(c, 0x00, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.swingModeToMAVaneMode(this.currentState.SwingMode), rotationSpeed);
   }
 
-    async maSetVaneMode(c, rotationSpeed) {
-    // await this.maControlCommand(c, 0x00, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+  async maSetVaneMode(c, vaneMode) {
+    await this.maControlCommand(c, 0x00, 0x00, 0x02, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, vaneMode, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   // MARK: - Status
@@ -338,22 +344,26 @@ export class MATouchPlatformAccessory {
     const targetCoolTemp = this.rawHexToDec(data, 28);
     this.platform.log.debug('CoolingThresholdTemperature:', targetCoolTemp);
     this.currentState.CoolingThresholdTemperature = targetCoolTemp;
-    this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature,
-      this.currentState.CoolingThresholdTemperature);
+    this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature, this.currentState.CoolingThresholdTemperature);
 
     const targetHeatTemp = this.rawHexToDec(data, 30);
     this.platform.log.debug('HeatingThresholdTemperature:', targetHeatTemp);
     this.currentState.HeatingThresholdTemperature = targetHeatTemp;
-    this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature,
-      this.currentState.HeatingThresholdTemperature);
+    this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.currentState.HeatingThresholdTemperature);
 
     const currentTemp = this.rawHexToDec(data, 45);
     this.platform.log.debug('CurrentTemperature:', currentTemp);
     this.currentState.CurrentTemperature = currentTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentState.CurrentTemperature);
 
-    const fanMode = this.maFanModeToRotationSpeed((data.readUInt16LE(38) >> 4) & 0xff);
-    this.currentState.RotationSpeed = fanMode;
+    const vaneMode = data.readUInt8(39);
+    this.currentState.SwingMode = this.maVaneModetoSwingMode(vaneMode);
+    this.platform.log.debug('SwingMode:', this.currentState.SwingMode);
+    this.service.updateCharacteristic(this.platform.Characteristic.SwingMode, this.currentState.SwingMode);
+
+    const fanMode = data.readUInt8(38) >> 4;
+    this.currentState.RotationSpeed = this.maFanModeToRotationSpeed(fanMode);
+    this.platform.log.debug('RotationSpeed:', this.currentState.RotationSpeed);
     this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentState.RotationSpeed);
 
     if (this.currentState.Active === this.platform.Characteristic.Active.ACTIVE) {
@@ -410,7 +420,7 @@ export class MATouchPlatformAccessory {
     return buffer;
   }
 
-  targetHeaterCoolerStateToMAMode(targetHeaterCoolerState) : number {
+  targetHeaterCoolerStateToMAMode(targetHeaterCoolerState: number) : number {
     switch (targetHeaterCoolerState) {
       case this.platform.Characteristic.TargetHeaterCoolerState.AUTO: return 0x79;
       case this.platform.Characteristic.TargetHeaterCoolerState.HEAT: return 0x11;
@@ -419,14 +429,21 @@ export class MATouchPlatformAccessory {
     }
   }
 
-  rotationSpeedToMAFanMode(rotationSpeed) : number {
-    this.platform.log.error('rotationSpeedToMAFanMode', rotationSpeed, 96 + (this.currentState.RotationSpeed / 25),(96 + (this.currentState.RotationSpeed / 25)).toString(16));
-    return 96 + (this.currentState.RotationSpeed / 25); 
+
+  swingModeToMAVaneMode(swingMode: number) : number {
+    return swingMode === 1 ? 0x7 : 0x6;
   }
 
-  maFanModeToRotationSpeed(fanMode) : number {
-    this.platform.log.error('maFanModeToRotationSpeed', fanMode, (fanMode - 96) * 25);
-    return (fanMode - 96) * 25;
+  maVaneModetoSwingMode(vaneMode: number) : number {
+    return vaneMode === 0x7 ? 1 : 0;
+  }
+
+  rotationSpeedToMAFanMode(rotationSpeed: number) : number {
+    return this.currentState.RotationSpeed / 25; 
+  }
+
+  maFanModeToRotationSpeed(fanMode: number) : number {
+    return fanMode * 25;
   }
 
   calculateCurrenteaterCoolerState(): number {
@@ -458,10 +475,6 @@ export class MATouchPlatformAccessory {
       default:
         return this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
     }
-  }
-
-  swap16(val) {
-    return ((val & 0xff) << 8) | ((val >> 8) & 0xff);
   }
 
   delay(ms) {
