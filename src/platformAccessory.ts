@@ -25,7 +25,7 @@ export class MATouchPlatformAccessory {
     CoolingThresholdTemperature: 10,
     HeatingThresholdTemperature: 10,
     RotationSpeed: 100,
-    SwingMode: 0
+    SwingMode: 0,
   };
 
   private changedState = {
@@ -34,7 +34,7 @@ export class MATouchPlatformAccessory {
     CoolingThresholdTemperature: false,
     HeatingThresholdTemperature: false,
     RotationSpeed: false,
-    SwingMode: false
+    SwingMode: false,
   };
 
   constructor(
@@ -252,7 +252,7 @@ export class MATouchPlatformAccessory {
       this.platform.log.error('Received an unsolicited notification!');
     }
   }
- 
+
   // MARK: - Control
 
   async maControlCommand(c, flagsA, flagsB, flagsC, mode, coolSetpoint, heatSetpoint, vaneMode, fanMode) {
@@ -437,7 +437,7 @@ export class MATouchPlatformAccessory {
   }
 
   rotationSpeedToMAFanMode(rotationSpeed: number) : number {
-    return this.currentState.RotationSpeed / 25; 
+    return rotationSpeed / 25;
   }
 
   maFanModeToRotationSpeed(fanMode: number) : number {
@@ -591,7 +591,7 @@ export class MATouchPlatformAccessory {
 
   handleRotationSpeedSet(value) {
     this.platform.log.debug('Triggered SET RotationSpeed');
-    
+
     if (this.currentState.RotationSpeed !== value) {
       this.currentState.RotationSpeed = value;
       this.changedState.RotationSpeed = true;
@@ -607,7 +607,7 @@ export class MATouchPlatformAccessory {
 
   handleSwingModeSet(value) {
     this.platform.log.debug('Triggered SET SwingMode');
-    
+
     if (this.currentState.SwingMode !== value) {
       this.currentState.SwingMode = value;
       this.changedState.SwingMode = true;
