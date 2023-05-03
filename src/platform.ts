@@ -29,11 +29,11 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
     // in order to ensure they weren't added to homebridge already. This event can also be used
     // to start discovery of new accessories.
     this.api.on(APIEvent.DID_FINISH_LAUNCHING, () => {
-      this.discoverDevices();
+      this.startDiscovering();
     });
 
     this.api.on(APIEvent.SHUTDOWN, () => {
-      noble.stopScanning();
+      this.stopDiscovering();
     });
   }
 
@@ -53,7 +53,7 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
    * Accessories must only be registered once, previously created accessories
    * must not be registered again to prevent "duplicate UUID" errors.
    */
-  discoverDevices() {
+  startDiscovering() {
     noble.on('stateChange', async (state) => {
       if (state === 'poweredOn') {
         this.log.info('Starting BLE discovery...');
@@ -117,5 +117,9 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
         }
       }
     });
+  }
+
+  stopDiscovering() {
+    noble.stopScanning();
   }
 }

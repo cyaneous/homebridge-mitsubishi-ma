@@ -10,11 +10,12 @@ import type { Peripheral } from '@abandonware/noble';
 export class MATouchPlatformAccessory {
   private service: Service;
   private pin: Buffer;
-  private updateTimeout: ReturnType<typeof setTimeout>;
+  private updateTimeout: NodeJS.Timeout;
   private msgid = 0;
   private receiveLength = 0;
   private receiveBuffer;
   private receiveResolve;
+  private shutdown = false;
 
   private currentState = {
     Active: 0,
@@ -23,6 +24,8 @@ export class MATouchPlatformAccessory {
     CurrentTemperature: 10,
     CoolingThresholdTemperature: 10,
     HeatingThresholdTemperature: 10,
+    RotationSpeed: 100,
+    SwingMode: 0
   };
 
   private changedState = {
@@ -30,6 +33,8 @@ export class MATouchPlatformAccessory {
     TargetHeaterCoolerState: false,
     CoolingThresholdTemperature: false,
     HeatingThresholdTemperature: false,
+    RotationSpeed: false,
+    SwingMode: false
   };
 
   constructor(
@@ -73,6 +78,15 @@ export class MATouchPlatformAccessory {
       .onGet(this.handleCoolingThresholdTemperatureGet.bind(this))
       .onSet(this.handleCoolingThresholdTemperatureSet.bind(this));
 
+    this.service.getCharacteristic(this.platform.Characteristic.RotationSpeed)
+      .setProps({ minStep: 25, minValue: 0, maxValue: 100 })
+      .onGet(this.handleRotationSpeedGet.bind(this))
+      .onSet(this.handleRotationSpeedSet.bind(this));
+
+    this.service.getCharacteristic(this.platform.Characteristic.SwingMode)
+      .onGet(this.handleSwingModeGet.bind(this))
+      .onSet(this.handleSwingModeSet.bind(this));
+
     this.pin = this.pinToHex(this.platform.config.pin || 0);
 
     // Update characteristics values asynchronously
@@ -80,12 +94,17 @@ export class MATouchPlatformAccessory {
 
     this.platform.api.on(APIEvent.SHUTDOWN, () => {
       clearTimeout(this.updateTimeout);
+      this.shutdown = true;
     });
   }
 
   // MARK: - Updates
 
   async update() {
+    if (this.shutdown) {
+      return;
+    }
+
     this.platform.log.debug('update()');
 
     clearTimeout(this.updateTimeout);
@@ -112,18 +131,15 @@ export class MATouchPlatformAccessory {
 
       const c0 = characteristics[0];
       const v0 = await c0.readAsync();
-      const expectedV0 = Buffer.from([0x30, 0x31, 0x2e, 0x30, 0x30, 0x2e, 0x30, 0x30]);
       this.platform.log.debug('Read c0:', v0);
-      if (Buffer.compare(v0, expectedV0) !== 0) {
+      if (Buffer.compare(v0, Buffer.from([0x30, 0x31, 0x2e, 0x30, 0x30, 0x2e, 0x30, 0x30])) !== 0) {
         this.platform.log.error('Unexpected c0 value:', v0);
       }
 
       const c1 = characteristics[1];
       const v1 = await c1.readAsync();
-      const expectedV1 = Buffer.from([0x43, 0x54, 0x30, 0x31, 0x4d, 0x41, 0x55, 0x5f, 0x30,
-        0x31, 0x2e, 0x36, 0x31, 0x00, 0x00, 0x00, 0x00, 0x41]);
       this.platform.log.debug('Read c1:', v1);
-      if (Buffer.compare(v1, expectedV1) !== 0) {
+      if (Buffer.compare(v1, Buffer.from([0x43, 0x54, 0x30, 0x31, 0x4d, 0x41, 0x55, 0x5f, 0x30, 0x31, 0x2e, 0x36, 0x31, 0x00, 0x00, 0x00, 0x00, 0x41])) !== 0) {
         this.platform.log.error('Unexpected c1 value:', v1);
       }
 
@@ -180,6 +196,16 @@ export class MATouchPlatformAccessory {
         this.changedState.HeatingThresholdTemperature = false;
       }
 
+      if (this.changedState.RotationSpeed) {
+        await this.maSetFanMode(c2, this.currentState.RotationSpeed);
+        this.changedState.RotationSpeed = false;
+      }
+
+      if (this.changedState.SwingMode) {
+        await this.maSetVaneMode(c2, this.currentState.SwingMode);
+        this.changedState.SwingMode = false;
+      }
+
       const status = await this.sendCommand(c2, Buffer.from([0x05, 0x02, 0x00]));
       await this.processStatus(status);
 
@@ -226,40 +252,47 @@ export class MATouchPlatformAccessory {
 
   // MARK: - Control
 
-  async maControlCommand(c, flagsA, flagsB, mode, coolSetpoint, heatSetpoint) {
-    // off:       05 0101 0100 0010 4502 1002 9001 4002 9001 6400 00
-    // on:        05 0101 0100 0011 4502 1002 9001 4002 9001 6400 00
-    // mode auto: 05 0101 0200 0079 4502 1002 9001 4002 9001 6400 00
-    // mode cool: 05 0101 0200 0009 4502 1002 9001 4002 9001 6400 00
-    // mode heat: 05 0101 0200 0011 4502 1002 9001 4002 9001 6400 00
-    // mode dry:  05 0101 0200 0031 4502 1002 9001 4002 9001 6400 00
-    // mode fan:  05 0101 0200 0001 4502 1002 9001 4002 9001 6400 00
-    // heat setp: 05 0101 0002 0011 4502 2002 9001 4002 9001 6400 00
-    // cool setp: 05 0101 0001 0009 4002 1002 9001 4002 9001 6400 00
+  async maControlCommand(c, flagsA, flagsB, flagsC, mode, coolSetpoint, heatSetpoint, fanMode) {
+    // off:        05 0101 0100 0010 4502 1002 9001 4002 9001 6400 00
+    // on:         05 0101 0100 0011 4502 1002 9001 4002 9001 6400 00
+    // mode auto:  05 0101 0200 0079 4502 1002 9001 4002 9001 6400 00
+    // mode cool:  05 0101 0200 0009 4502 1002 9001 4002 9001 6400 00
+    // mode heat:  05 0101 0200 0011 4502 1002 9001 4002 9001 6400 00
+    // mode dry:   05 0101 0200 0031 4502 1002 9001 4002 9001 6400 00
+    // mode fan:   05 0101 0200 0001 4502 1002 9001 4002 9001 6400 00
+    // heat setp:  05 0101 0002 0011 4502 2002 9001 4002 9001 6400 00
+    // cool setp:  05 0101 0001 0009 4002 1002 9001 4002 9001 6400 00
+    // fan auto:   05 0101 0000 0111 4502 1002 9001 4002 9001 6400 00
+    // fan high:   05 0101 0000 0111 4502 1002 9001 4002 9001 6300 00
+    // fan medium: 05 0101 0000 0111 4502 1002 9001 4002 9001 6200 00
+    // fan low:    05 0101 0000 0111 4502 1002 9001 4002 9001 6000 00
     const cool = this.rawDecToHex(coolSetpoint);
     const heat = this.rawDecToHex(heatSetpoint);
-    await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, 0x00, mode, cool[0], cool[1], heat[0], heat[1],
-      0x90, 0x01, 0x40, 0x02, 0x90, 0x01, 0x64, 0x00, 0x00]));
+    await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, flagsC, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, fanMode, 0x00, 0x00]));
   }
 
   async maSetOnOff(c, yorn) {
-    await this.maControlCommand(c, 0x01, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature,
-      this.currentState.HeatingThresholdTemperature);
+    await this.maControlCommand(c, 0x01, 0x00, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   async maSetMode(c, mode) {
-    await this.maControlCommand(c, 0x02, 0x00, mode, this.currentState.CoolingThresholdTemperature,
-      this.currentState.HeatingThresholdTemperature);
+    await this.maControlCommand(c, 0x02, 0x00, 0x00, mode, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   async maSetCoolingSetpoint(c, coolingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState),
-      coolingSetpoint, this.currentState.HeatingThresholdTemperature);
+    await this.maControlCommand(c, 0x00, 0x01, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), coolingSetpoint, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   async maSetHeatingSetpoint(c, heatingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x02, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState),
-      this.currentState.CoolingThresholdTemperature, heatingSetpoint);
+    await this.maControlCommand(c, 0x00, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, heatingSetpoint, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+  }
+
+  async maSetFanMode(c, rotationSpeed) {
+    await this.maControlCommand(c, 0x00, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+  }
+
+    async maSetVaneMode(c, rotationSpeed) {
+    // await this.maControlCommand(c, 0x00, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   // MARK: - Status
@@ -319,32 +352,12 @@ export class MATouchPlatformAccessory {
     this.currentState.CurrentTemperature = currentTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentState.CurrentTemperature);
 
+    const fanMode = this.maFanModeToRotationSpeed((data.readUInt16LE(38) >> 4) & 0xff);
+    this.currentState.RotationSpeed = fanMode;
+    this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentState.RotationSpeed);
+
     if (this.currentState.Active === this.platform.Characteristic.Active.ACTIVE) {
-      switch (this.currentState.TargetHeaterCoolerState) {
-        case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
-          if (this.currentState.CurrentTemperature <= this.currentState.HeatingThresholdTemperature) {
-            this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
-          } else {
-            this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
-          }
-          break;
-        case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
-          if (this.currentState.CurrentTemperature >= this.currentState.CoolingThresholdTemperature) {
-            this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
-          } else {
-            this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
-          }
-          break;
-        case this.platform.Characteristic.TargetHeaterCoolerState.AUTO:
-          if (this.currentState.CurrentTemperature < this.currentState.HeatingThresholdTemperature) {
-            this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
-          } else if (this.currentState.CurrentTemperature > this.currentState.CoolingThresholdTemperature) {
-            this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
-          } else {
-            this.currentState.CurrentHeaterCoolerState = this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
-          }
-          break;
-      }
+      this.currentState.CurrentHeaterCoolerState = this.calculateCurrenteaterCoolerState();
       // const state = data.readUInt8(45);
       // switch (state) {
       // case 0x15: // heat
@@ -404,6 +417,51 @@ export class MATouchPlatformAccessory {
       case this.platform.Characteristic.TargetHeaterCoolerState.COOL: return 0x09;
       default: return 0x79;
     }
+  }
+
+  rotationSpeedToMAFanMode(rotationSpeed) : number {
+    this.platform.log.error('rotationSpeedToMAFanMode', rotationSpeed, 96 + (this.currentState.RotationSpeed / 25),(96 + (this.currentState.RotationSpeed / 25)).toString(16));
+    return 96 + (this.currentState.RotationSpeed / 25); 
+  }
+
+  maFanModeToRotationSpeed(fanMode) : number {
+    this.platform.log.error('maFanModeToRotationSpeed', fanMode, (fanMode - 96) * 25);
+    return (fanMode - 96) * 25;
+  }
+
+  calculateCurrenteaterCoolerState(): number {
+    switch (this.currentState.TargetHeaterCoolerState) {
+      case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
+        if (this.currentState.CurrentTemperature <= this.currentState.HeatingThresholdTemperature) {
+          return this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+        } else {
+          return this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+        }
+        break;
+      case this.platform.Characteristic.TargetHeaterCoolerState.COOL:
+        if (this.currentState.CurrentTemperature >= this.currentState.CoolingThresholdTemperature) {
+          return this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+        } else {
+          return this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+        }
+        break;
+      case this.platform.Characteristic.TargetHeaterCoolerState.AUTO:
+        if (this.currentState.CurrentTemperature < this.currentState.HeatingThresholdTemperature) {
+          return this.platform.Characteristic.CurrentHeaterCoolerState.HEATING;
+        } else if (this.currentState.CurrentTemperature > this.currentState.CoolingThresholdTemperature) {
+          return this.platform.Characteristic.CurrentHeaterCoolerState.COOLING;
+        } else {
+          return this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+        }
+        break;
+
+      default:
+        return this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
+    }
+  }
+
+  swap16(val) {
+    return ((val & 0xff) << 8) | ((val >> 8) & 0xff);
   }
 
   delay(ms) {
@@ -521,4 +579,35 @@ export class MATouchPlatformAccessory {
     }
   }
 
+  handleRotationSpeedGet() {
+    this.platform.log.debug('Triggered GET RotationSpeed');
+
+    return this.currentState.RotationSpeed;
+  }
+
+  handleRotationSpeedSet(value) {
+    this.platform.log.debug('Triggered SET RotationSpeed');
+    
+    if (this.currentState.RotationSpeed !== value) {
+      this.currentState.RotationSpeed = value;
+      this.changedState.RotationSpeed = true;
+      this.update();
+    }
+  }
+
+  handleSwingModeGet() {
+    this.platform.log.debug('Triggered GET SwingMode');
+
+    return this.currentState.SwingMode;
+  }
+
+  handleSwingModeSet(value) {
+    this.platform.log.debug('Triggered SET SwingMode');
+    
+    if (this.currentState.SwingMode !== value) {
+      this.currentState.SwingMode = value;
+      this.changedState.SwingMode = true;
+      this.update();
+    }
+  }
 }
