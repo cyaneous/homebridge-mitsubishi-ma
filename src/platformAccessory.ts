@@ -13,7 +13,7 @@ export class MATouchPlatformAccessory {
   private updateTimeout: NodeJS.Timeout;
   private msgid = 0;
   private receiveLength = 0;
-  private receiveBuffer;
+  private receiveBuffer = Buffer.alloc(0);
   private receiveResolve;
   private shutdown = false;
 
@@ -105,14 +105,14 @@ export class MATouchPlatformAccessory {
       return;
     }
 
-    this.platform.log.debug('update()');
-
     clearTimeout(this.updateTimeout);
 
     if (this.peripheral.state === 'connected') {
+      this.platform.log.debug('update() rescheduled.');
       this.updateTimeout = setTimeout(async () => await this.update(), 3000);
       return;
     } else {
+      this.platform.log.debug('update()');
       this.updateTimeout = setTimeout(async () => await this.update(), 10000);
     }
 
@@ -219,11 +219,10 @@ export class MATouchPlatformAccessory {
     }
   }
 
-  // MARK: - Comm
+  // MARK: - Communications
 
   // [2: length] [1: msgid] [l: body] [2: cksum]
   async sendCommand(characteristic, body) : Promise<Buffer> {
-    // await this.delay(500);
     return new Promise<Buffer>((resolve) => {
       const buffer = Buffer.alloc(2 + 1 + body.length + 2);
       buffer.writeUInt16LE(1 + body.length + 2, 0);
@@ -429,7 +428,6 @@ export class MATouchPlatformAccessory {
     }
   }
 
-
   swingModeToMAVaneMode(swingMode: number) : number {
     return swingMode === 1 ? 0x7 : 0x6;
   }
@@ -475,12 +473,6 @@ export class MATouchPlatformAccessory {
       default:
         return this.platform.Characteristic.CurrentHeaterCoolerState.IDLE;
     }
-  }
-
-  delay(ms) {
-    return new Promise((resolve) => {
-      setTimeout(resolve, ms);
-    });
   }
 
   // MARK: - HomeKit API
@@ -546,7 +538,6 @@ export class MATouchPlatformAccessory {
 
     return this.currentState.CurrentTemperature;
   }
-
 
   /**
    * Handle requests to get the current value of the "Cooling Threshold Temperature" characteristic

@@ -102,7 +102,7 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
           this.log.info('Adding new accessory:', peripheral.advertisement.localName);
 
           // create a new accessory
-          const accessory = new this.api.platformAccessory(peripheral.advertisement.localName, uuid);
+          const accessory = new this.api.platformAccessory(peripheral.advertisement.localName, uuid, this.api.hap.Categories.AIR_CONDITIONER);
 
           // store a copy of the device object in the `accessory.context`
           // the `context` property can be used to store any data about the accessory you may need
