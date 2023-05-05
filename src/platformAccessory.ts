@@ -15,7 +15,7 @@ export class MATouchPlatformAccessory {
   private receiveLength = 0;
   private receiveBuffer = Buffer.alloc(0);
   private receiveResolve;
-  private shutdown = false;
+  private isShutdown = false;
 
   private currentState = {
     Active: 0,
@@ -87,21 +87,21 @@ export class MATouchPlatformAccessory {
       .onGet(this.handleSwingModeGet.bind(this))
       .onSet(this.handleSwingModeSet.bind(this));
 
-    this.pin = this.pinToHex(this.platform.config.pin || 0);
+    this.pin = this.pinToBase10Hex(this.platform.config.pin || 0);
 
     // Update characteristics values asynchronously
     this.updateTimeout = setTimeout(async () => await this.update(), 250);
 
     this.platform.api.on(APIEvent.SHUTDOWN, () => {
       clearTimeout(this.updateTimeout);
-      this.shutdown = true;
+      this.isShutdown = true;
     });
   }
 
   // MARK: - Updates
 
   async update() {
-    if (this.shutdown) {
+    if (this.isShutdown) {
       return;
     }
 
@@ -116,11 +116,21 @@ export class MATouchPlatformAccessory {
       this.updateTimeout = setTimeout(async () => await this.update(), 10000);
     }
 
-    this.platform.log.debug('Connecting...');
-
     try {
+      this.platform.log.debug('Connecting...');
       await this.peripheral.connectAsync();
 
+      if (this.peripheral.uuid === null) {
+        this.platform.log.error("Failed to connect properly, will retry.");
+        this.peripheral.disconnectAsync();
+        return;
+      }
+    } catch (error) {
+      this.platform.log.error('Connection failed:', error);
+      return;
+    }
+
+    try {
       const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18e79611e6bf01fe55135034f3'],
         [
           '799e3b22e79711e6bf01fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
@@ -215,7 +225,8 @@ export class MATouchPlatformAccessory {
       this.platform.log.debug('Disconnecting!');
       await this.peripheral.disconnectAsync();
     } catch (error) {
-      this.platform.log.error('Caught an error in update():', error);
+      this.platform.log.error('Communications error in update():', error);
+      await this.peripheral.disconnectAsync();
     }
   }
 
@@ -271,8 +282,8 @@ export class MATouchPlatformAccessory {
     // fan low:    05 0101 0000 0111 4502 1002 9001 4002 9001 6000 00
     // vane auto:  05 0101 0000 0211 4502 1002 9001 4002 9001 6400 00
     // vane swing: 05 0101 0000 0211 4502 1002 9001 4002 9001 7400 00 <-- so 7 is vane, 4 is fan
-    const cool = this.rawDecToHex(coolSetpoint);
-    const heat = this.rawDecToHex(heatSetpoint);
+    const cool = this.numberToBase10Hex(coolSetpoint);
+    const heat = this.numberToBase10Hex(heatSetpoint);
     await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, flagsC, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, (vaneMode << 4) + fanMode, 0x00, 0x00]));
   }
 
@@ -303,54 +314,49 @@ export class MATouchPlatformAccessory {
   // MARK: - Status
 
   async processStatus(data) {
+    // __ __ 0e 05 00 02 00 00 00 32 10 03 60 01 90 02 00 01 10 03 
+    // 60 01 10 03 80 01 90 02 60 01 40 02 10 02 90 01 40 02 90 01 
+    // 40 06 00 00 00 00 00 20 02 01 00 10 04 __ __
     if (data.readUInt8(1) !== 0x05 || data.length !== 0x35) {
       this.platform.log.error('Invalid status reply:', data);
       return;
     }
 
-    const mode = data.readUInt8(7);
-    switch (mode) {
-      case 0x78: // off (x78: auto, x10:heat, x08:cool)
-      case 0x10:
-      case 0x08:
-        this.currentState.Active = this.platform.Characteristic.Active.INACTIVE;
-        break;
-      case 0x02: // fan
-        break;
-      case 0x32: // dry
-        break;
-      case 0x12: // heat
-        this.currentState.Active = this.platform.Characteristic.Active.ACTIVE;
-        this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
-        break;
-      case 0x0a: // cool
-        this.currentState.Active = this.platform.Characteristic.Active.ACTIVE;
-        this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
-        break;
-      case 0x7a: // auto
-        this.currentState.Active = this.platform.Characteristic.Active.ACTIVE;
-        this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
-        break;
-      default:
-        this.platform.log.error('Unexpected mode:', mode);
-        break;
+    const status = data.readUInt8(7);
+    const fan = status & (1 << 1);
+    const cool = status & (1 << 3);
+    const heat = status & (1 << 4);
+    const dry = status & (1 << 5);
+    const auto = status & (1 << 6);
+
+    this.currentState.Active = fan ? this.platform.Characteristic.Active.ACTIVE : this.platform.Characteristic.Active.INACTIVE;
+
+    if (auto) {
+      this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
+    } else if (cool/* && !dry*/) {
+      this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
+    } else if (heat/* && !dry*/) {
+      this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
+    } else { // no matching homekit mode, so say we're off
+      this.currentState.Active = this.platform.Characteristic.Active.INACTIVE;;
     }
+
     this.platform.log.debug('Active:', this.currentState.Active);
     this.service.updateCharacteristic(this.platform.Characteristic.Active, this.currentState.Active);
     this.platform.log.debug('TargetHeaterCoolerState:', this.currentState.TargetHeaterCoolerState);
     this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.currentState.TargetHeaterCoolerState);
 
-    const targetCoolTemp = this.rawHexToDec(data, 28);
+    const targetCoolTemp = this.numberFromBase10Hex(data, 28);
     this.platform.log.debug('CoolingThresholdTemperature:', targetCoolTemp);
     this.currentState.CoolingThresholdTemperature = targetCoolTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature, this.currentState.CoolingThresholdTemperature);
 
-    const targetHeatTemp = this.rawHexToDec(data, 30);
+    const targetHeatTemp = this.numberFromBase10Hex(data, 30);
     this.platform.log.debug('HeatingThresholdTemperature:', targetHeatTemp);
     this.currentState.HeatingThresholdTemperature = targetHeatTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.currentState.HeatingThresholdTemperature);
 
-    const currentTemp = this.rawHexToDec(data, 45);
+    const currentTemp = this.numberFromBase10Hex(data, 45);
     this.platform.log.debug('CurrentTemperature:', currentTemp);
     this.currentState.CurrentTemperature = currentTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentState.CurrentTemperature);
@@ -366,7 +372,7 @@ export class MATouchPlatformAccessory {
     this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentState.RotationSpeed);
 
     if (this.currentState.Active === this.platform.Characteristic.Active.ACTIVE) {
-      this.currentState.CurrentHeaterCoolerState = this.calculateCurrenteaterCoolerState();
+      this.currentState.CurrentHeaterCoolerState = this.calculateCurrentHeaterCoolerState();
       // const state = data.readUInt8(45);
       // switch (state) {
       // case 0x15: // heat
@@ -392,13 +398,13 @@ export class MATouchPlatformAccessory {
     return buffer.reduce((a, b) => (a + b) & 0xffff, 0);
   }
 
-  rawHexToDec(buffer: Buffer, offset: number) : number {
+  numberFromBase10Hex(buffer: Buffer, offset: number) : number {
     const a = buffer.readUInt8(offset + 1); // 01
     const b = buffer.readUInt8(offset); // 95
     return (((a & 0xf)*100)+((b >> 4)*10)+(b & 0xf))/10.0;
   }
 
-  rawDecToHex(n: number) : Buffer {
+  numberToBase10Hex(n: number) : Buffer {
     const a = Math.trunc(n / 10); // 1
     const b = Math.trunc(n % 10); // 9
     const c = n * 10 % 10; // 5
@@ -408,7 +414,7 @@ export class MATouchPlatformAccessory {
     return buffer;
   }
 
-  pinToHex(n: number) : Buffer {
+  pinToBase10Hex(n: number) : Buffer {
     const a = Math.trunc(n / 1000); // 1
     const b = Math.trunc(n / 100 % 10); // 2
     const c = Math.trunc(n / 10 % 10); // 3
@@ -444,7 +450,7 @@ export class MATouchPlatformAccessory {
     return fanMode * 25;
   }
 
-  calculateCurrenteaterCoolerState(): number {
+  calculateCurrentHeaterCoolerState(): number {
     switch (this.currentState.TargetHeaterCoolerState) {
       case this.platform.Characteristic.TargetHeaterCoolerState.HEAT:
         if (this.currentState.CurrentTemperature <= this.currentState.HeatingThresholdTemperature) {
