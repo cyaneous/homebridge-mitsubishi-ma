@@ -2,6 +2,15 @@ import { Service, PlatformAccessory, APIEvent } from 'homebridge';
 import { MATouchPlatform } from './platform';
 import type { Peripheral } from '@abandonware/noble';
 
+const MODE_MASK = {
+  POWER: (1 << 0),
+  FAN: (1 << 1),
+  COOL: (1 << 3),
+  HEAT: (1 << 4),
+  DRY: (1 << 5),
+  AUTO: (1 << 6),
+};
+
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
@@ -186,13 +195,12 @@ export class MATouchPlatformAccessory {
       await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
 
       if (this.changedState.Active) {
-        await this.maSetOnOff(c2, this.currentState.Active);
+        await this.maSetPower(c2, this.currentState.Active === this.platform.Characteristic.Active.ACTIVE);
         this.changedState.Active = false;
       }
 
       if (this.changedState.TargetHeaterCoolerState) {
-        const mode = this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState);
-        await this.maSetMode(c2, mode);
+        await this.maSetMode(c2, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState));
         this.changedState.TargetHeaterCoolerState = false;
       }
 
@@ -287,7 +295,7 @@ export class MATouchPlatformAccessory {
     await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, flagsC, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, (vaneMode << 4) + fanMode, 0x00, 0x00]));
   }
 
-  async maSetOnOff(c, yorn) {
+  async maSetPower(c, yorn) {
     await this.maControlCommand(c, 0x01, 0x00, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
@@ -322,20 +330,14 @@ export class MATouchPlatformAccessory {
       return;
     }
 
-    const status = data.readUInt8(7);
-    const fan = status & (1 << 1);
-    const cool = status & (1 << 3);
-    const heat = status & (1 << 4);
-    const dry = status & (1 << 5);
-    const auto = status & (1 << 6);
+    const mode = data.readUInt8(7);
+    this.currentState.Active = ((mode & MODE_MASK.FAN) !== 0) ? this.platform.Characteristic.Active.ACTIVE : this.platform.Characteristic.Active.INACTIVE;
 
-    this.currentState.Active = fan ? this.platform.Characteristic.Active.ACTIVE : this.platform.Characteristic.Active.INACTIVE;
-
-    if (auto) {
+    if ((mode & MODE_MASK.AUTO) !== 0) {
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
-    } else if (cool/* && !dry*/) {
+    } else if ((mode & MODE_MASK.COOL) !== 0) {
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
-    } else if (heat/* && !dry*/) {
+    } else if ((mode & MODE_MASK.HEAT) !== 0) {
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
     } else { // no matching homekit mode, so say we're off
       this.currentState.Active = this.platform.Characteristic.Active.INACTIVE;;
@@ -426,11 +428,11 @@ export class MATouchPlatformAccessory {
   }
 
   targetHeaterCoolerStateToMAMode(targetHeaterCoolerState: number) : number {
-    switch (targetHeaterCoolerState) {
-      case this.platform.Characteristic.TargetHeaterCoolerState.AUTO: return 0x79;
-      case this.platform.Characteristic.TargetHeaterCoolerState.HEAT: return 0x11;
-      case this.platform.Characteristic.TargetHeaterCoolerState.COOL: return 0x09;
-      default: return 0x79;
+    switch (this.currentState.TargetHeaterCoolerState) {
+    case this.platform.Characteristic.TargetHeaterCoolerState.AUTO: return (MODE_MASK.POWER | MODE_MASK.COOL | MODE_MASK.HEAT | MODE_MASK.DRY | MODE_MASK.AUTO);
+    case this.platform.Characteristic.TargetHeaterCoolerState.HEAT: return (MODE_MASK.POWER | MODE_MASK.HEAT);
+    case this.platform.Characteristic.TargetHeaterCoolerState.COOL: return (MODE_MASK.POWER | MODE_MASK.COOL);
+    default: throw new Error('Invalid TargetHeaterCoolerState: ${this.currentState.TargetHeaterCoolerState}');
     }
   }
 
