@@ -130,7 +130,7 @@ export class MATouchPlatformAccessory {
       await this.peripheral.connectAsync();
 
       if (this.peripheral.uuid === null) {
-        this.platform.log.error("Failed to connect properly, will retry.");
+        this.platform.log.error('Failed to connect properly, will retry.');
         this.peripheral.disconnectAsync();
         return;
       }
@@ -322,8 +322,8 @@ export class MATouchPlatformAccessory {
   // MARK: - Status
 
   async processStatus(data) {
-    // __ __ 0e 05 00 02 00 00 00 32 10 03 60 01 90 02 00 01 10 03 
-    // 60 01 10 03 80 01 90 02 60 01 40 02 10 02 90 01 40 02 90 01 
+    // __ __ 0e 05 00 02 00 00 00 32 10 03 60 01 90 02 00 01 10 03
+    // 60 01 10 03 80 01 90 02 60 01 40 02 10 02 90 01 40 02 90 01
     // 40 06 00 00 00 00 00 20 02 01 00 10 04 __ __
     if (data.readUInt8(1) !== 0x05 || data.length !== 0x35) {
       this.platform.log.error('Invalid status reply:', data);
@@ -340,7 +340,7 @@ export class MATouchPlatformAccessory {
     } else if ((mode & MODE_MASK.HEAT) !== 0) {
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
     } else { // no matching homekit mode, so say we're off
-      this.currentState.Active = this.platform.Characteristic.Active.INACTIVE;;
+      this.currentState.Active = this.platform.Characteristic.Active.INACTIVE;
     }
 
     this.platform.log.debug('Active:', this.currentState.Active);
@@ -428,11 +428,11 @@ export class MATouchPlatformAccessory {
   }
 
   targetHeaterCoolerStateToMAMode(targetHeaterCoolerState: number) : number {
-    switch (this.currentState.TargetHeaterCoolerState) {
-    case this.platform.Characteristic.TargetHeaterCoolerState.AUTO: return (MODE_MASK.POWER | MODE_MASK.COOL | MODE_MASK.HEAT | MODE_MASK.DRY | MODE_MASK.AUTO);
-    case this.platform.Characteristic.TargetHeaterCoolerState.HEAT: return (MODE_MASK.POWER | MODE_MASK.HEAT);
-    case this.platform.Characteristic.TargetHeaterCoolerState.COOL: return (MODE_MASK.POWER | MODE_MASK.COOL);
-    default: throw new Error('Invalid TargetHeaterCoolerState: ${this.currentState.TargetHeaterCoolerState}');
+    switch (targetHeaterCoolerState) {
+      case this.platform.Characteristic.TargetHeaterCoolerState.AUTO: return (MODE_MASK.POWER | MODE_MASK.COOL | MODE_MASK.HEAT | MODE_MASK.DRY | MODE_MASK.AUTO);
+      case this.platform.Characteristic.TargetHeaterCoolerState.HEAT: return (MODE_MASK.POWER | MODE_MASK.HEAT);
+      case this.platform.Characteristic.TargetHeaterCoolerState.COOL: return (MODE_MASK.POWER | MODE_MASK.COOL);
+      default: throw new Error('Invalid TargetHeaterCoolerState: ${this.currentState.TargetHeaterCoolerState}');
     }
   }
 
