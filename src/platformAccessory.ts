@@ -126,6 +126,7 @@ export class MATouchPlatformAccessory {
 
     try {
       this.platform.log.debug('Connecting...');
+      const connectTimeout = setTimeout(this.peripheral.cancelConnect, 3000);
       await this.peripheral.connectAsync();
 
       if (this.peripheral.uuid === null) {
