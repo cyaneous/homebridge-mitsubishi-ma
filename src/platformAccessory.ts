@@ -58,8 +58,7 @@ export class MATouchPlatformAccessory {
       .setCharacteristic(this.platform.Characteristic.SerialNumber, peripheral.advertisement.localName.substring(12));
 
     // get the Thermostat service if it exists, otherwise create a new Thermostat service
-    this.service = this.accessory.getService(this.platform.Service.HeaterCooler) ||
-                                             this.accessory.addService(this.platform.Service.HeaterCooler);
+    this.service = this.accessory.getService(this.platform.Service.HeaterCooler) || this.accessory.addService(this.platform.Service.HeaterCooler);
 
     // set the service name, this is what is displayed as the default name on the Home app
     this.service.setCharacteristic(this.platform.Characteristic.Name, peripheral.advertisement.localName);
@@ -131,7 +130,7 @@ export class MATouchPlatformAccessory {
 
       if (this.peripheral.uuid === null) {
         this.platform.log.error('Failed to connect properly, will retry.');
-        this.peripheral.disconnectAsync();
+        await this.peripheral.disconnectAsync();
         return;
       }
     } catch (error) {
