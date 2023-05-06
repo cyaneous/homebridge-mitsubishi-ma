@@ -128,6 +128,7 @@ export class MATouchPlatformAccessory {
       this.platform.log.debug('Connecting...');
       const connectTimeout = setTimeout(this.peripheral.cancelConnect, 3000);
       await this.peripheral.connectAsync();
+      clearTimeout(connectTimeout);
 
       if (this.peripheral.uuid === null) {
         this.platform.log.error('Failed to connect properly, will retry.');
