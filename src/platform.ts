@@ -31,10 +31,6 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
     this.api.on(APIEvent.DID_FINISH_LAUNCHING, () => {
       this.startDiscovering();
     });
-
-    this.api.on(APIEvent.SHUTDOWN, () => {
-      this.stopDiscovering();
-    });
   }
 
   /**
@@ -56,20 +52,20 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
   startDiscovering() {
     noble.on('stateChange', async (state) => {
       if (state === 'poweredOn') {
-        this.log.info('Starting BLE discovery...');
+        this.log.info('Starting BLE discovery for 30 seconds...');
         await noble.startScanningAsync([], false);
 
-        /*if (this.config.stopDiscovery === true) {
+        if (this.config.stopDiscovery === true) {
           setTimeout(() => {
-            this.log.info('Stopping BLE discovery...');
+            this.log.info('Stopping BLE discovery.');
             noble.stopScanning();
-          }, 15000);
-        }*/
+          }, 30000);
+        }
       }
     });
 
     noble.on('discover', async (peripheral) => {
-      if (peripheral.advertisement.localName !== undefined && peripheral.advertisement.localName.startsWith('M/R_CT01MAU')) {
+      if (peripheral.advertisement.localName?.startsWith('M/R_CT01MAU')) {
         this.log.info('Found an MA Touch thermostat:', peripheral.advertisement.localName);
 
         // generate a unique id for the accessory this should be generated from
@@ -119,7 +115,4 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
     });
   }
 
-  stopDiscovering() {
-    noble.stopScanning();
-  }
 }

@@ -125,16 +125,13 @@ export class MATouchPlatformAccessory {
     }
 
     try {
-      this.platform.log.debug('Connecting...');
-      const connectTimeout = setTimeout(this.peripheral.cancelConnect, 3000);
+      this.platform.log.debug('Connecting to', this.peripheral.uuid, '...');
+      const connectTimeout = setTimeout(() => {
+      this.platform.log.error('Connection attempt timed out.');
+        this.peripheral.cancelConnect();
+      }, 1500);
       await this.peripheral.connectAsync();
       clearTimeout(connectTimeout);
-
-      if (this.peripheral.uuid === null) {
-        this.platform.log.error('Failed to connect properly, will retry.');
-        await this.peripheral.disconnectAsync();
-        return;
-      }
     } catch (error) {
       this.platform.log.error('Connection failed:', error);
       return;
@@ -433,7 +430,7 @@ export class MATouchPlatformAccessory {
       case this.platform.Characteristic.TargetHeaterCoolerState.AUTO: return (MODE_MASK.POWER | MODE_MASK.COOL | MODE_MASK.HEAT | MODE_MASK.DRY | MODE_MASK.AUTO);
       case this.platform.Characteristic.TargetHeaterCoolerState.HEAT: return (MODE_MASK.POWER | MODE_MASK.HEAT);
       case this.platform.Characteristic.TargetHeaterCoolerState.COOL: return (MODE_MASK.POWER | MODE_MASK.COOL);
-      default: throw new Error('Invalid TargetHeaterCoolerState: ${this.currentState.TargetHeaterCoolerState}');
+      default: throw new Error('Invalid TargetHeaterCoolerState!');
     }
   }
 
