@@ -129,7 +129,7 @@ export class MATouchPlatformAccessory {
       const connectTimeout = setTimeout(() => {
         this.platform.log.warn('Connection attempt timed out.');
         this.peripheral.cancelConnect();
-      }, 1000);
+      }, 1500);
       await this.peripheral.connectAsync();
       clearTimeout(connectTimeout);
       this.platform.log.debug('Connected!');
@@ -165,7 +165,7 @@ export class MATouchPlatformAccessory {
       c3.notify(true);
 
       c3.on('data', async (data) => {
-        this.platform.log.debug('RCV:', data);
+        this.platform.log.debug('RCV:', data, this.receiveLength);
 
         if (this.receiveLength === 0) {
           const len = data.readUInt8();
