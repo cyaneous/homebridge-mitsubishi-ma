@@ -127,11 +127,12 @@ export class MATouchPlatformAccessory {
     try {
       this.platform.log.debug('Connecting to', this.peripheral.uuid, '...');
       const connectTimeout = setTimeout(() => {
-        this.platform.log.error('Connection attempt timed out.');
+        this.platform.log.warn('Connection attempt timed out.');
         this.peripheral.cancelConnect();
-      }, 1500);
+      }, 1000);
       await this.peripheral.connectAsync();
       clearTimeout(connectTimeout);
+      this.platform.log.debug('Connected!');
     } catch (error) {
       this.platform.log.error('Connection failed:', error);
       return;
@@ -164,7 +165,7 @@ export class MATouchPlatformAccessory {
       c3.notify(true);
 
       c3.on('data', async (data) => {
-        this.platform.log.debug('Received:', this.receiveLength, data);
+        this.platform.log.debug('RCV:', data);
 
         if (this.receiveLength === 0) {
           const len = data.readUInt8();
@@ -249,7 +250,7 @@ export class MATouchPlatformAccessory {
       //this.platform.log.debug('Full packet:', buffer, buffer.length);
       for (let i = 0; i < buffer.length; i += 20) {
         const part = buffer.slice(i, Math.min(buffer.length, i + 20));
-        this.platform.log.debug('Sent:', part, i, buffer.length - i);
+        this.platform.log.debug('SND:', part, i, buffer.length - i);
         characteristic.write(part, true); // TODO: handle thrown errors here and other places
       }
       this.msgid += 1;
@@ -261,7 +262,7 @@ export class MATouchPlatformAccessory {
   }
 
   async receivedMessage(data) {
-    this.platform.log.debug('Message:', data);
+    //this.platform.log.debug('Message:', data);
     if (this.receiveResolve) {
       this.receiveResolve(data);
       this.receiveResolve = undefined;
