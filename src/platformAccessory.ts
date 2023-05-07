@@ -127,7 +127,7 @@ export class MATouchPlatformAccessory {
     try {
       this.platform.log.debug('Connecting to', this.peripheral.uuid, '...');
       const connectTimeout = setTimeout(() => {
-      this.platform.log.error('Connection attempt timed out.');
+        this.platform.log.error('Connection attempt timed out.');
         this.peripheral.cancelConnect();
       }, 1500);
       await this.peripheral.connectAsync();
