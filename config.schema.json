@@ -16,7 +16,7 @@
         "title": "Stop Discovery",
         "type": "boolean",
         "required": true,
-        "default": true,
+        "default": false,
         "description": "Stop thermostat discovery after 30 seconds."
       }
     }
