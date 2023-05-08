@@ -133,9 +133,9 @@ export class MATouchPlatformAccessory {
       this.platform.log.debug('Connecting to', this.peripheral.uuid, '...');
       this.peripheral.cancelConnect();
       await this.peripheral.connectAsync();
-      this.platform.log.debug('Connected!');
+      this.platform.log.debug('Connected state:', this.peripheral.state);
     } catch (error) {
-      this.platform.log.error('Connection failed:', error);
+      this.platform.log.error('Connection failed:', error, 'state:', this.peripheral.state);
       return;
     }
 
@@ -344,7 +344,8 @@ export class MATouchPlatformAccessory {
     // 36-37: 19.0? [unknown temp?]
     // 38: fan mode
     // 39: vane mode
-    // 40-44: zeroes? [unknown]
+    // 40-43: zeroes? [unknown]
+    // 44: hold
     // 45-46: room temp
     // 47: 0x01? [unknown]
     // 48: 0x00? [unknown]
@@ -408,6 +409,9 @@ export class MATouchPlatformAccessory {
     this.currentState.SwingMode = this.maVaneModetoSwingMode(vaneMode);
     this.platform.log.debug('SwingMode:', this.currentState.SwingMode);
     this.service.updateCharacteristic(this.platform.Characteristic.SwingMode, this.currentState.SwingMode);
+
+    const hold = data.readUInt8(44);
+    this.platform.log.debug('Hold:', hold.toString(16));
 
     const roomTemp = this.numberFromBase10Hex(data, 45);
     this.platform.log.debug('CurrentTemperature:', roomTemp);
