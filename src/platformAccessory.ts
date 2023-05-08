@@ -114,24 +114,15 @@ export class MATouchPlatformAccessory {
     }
 
     clearTimeout(this.updateTimeout);
+    this.updateTimeout = setTimeout(async () => await this.update(), 10000);
 
     if (this.peripheral.state === 'connected') {
-      this.platform.log.debug('update() rescheduled.');
-      this.updateTimeout = setTimeout(async () => await this.update(), 3000);
-      return;
-    } else {
-      this.platform.log.debug('update()');
-      this.updateTimeout = setTimeout(async () => await this.update(), 10000);
+      await this.peripheral.disconnectAsync();
     }
 
     try {
       this.platform.log.debug('Connecting to', this.peripheral.uuid, '...');
-      const connectTimeout = setTimeout(() => {
-        this.platform.log.warn('Connection attempt timed out.');
-        this.peripheral.cancelConnect();
-      }, 1500);
       await this.peripheral.connectAsync();
-      clearTimeout(connectTimeout);
       this.platform.log.debug('Connected!');
     } catch (error) {
       this.platform.log.error('Connection failed:', error);
@@ -189,7 +180,7 @@ export class MATouchPlatformAccessory {
       await this.sendCommand(c2, Buffer.from([0x01, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(c2, Buffer.from([0x03, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(c2, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      await this.sendCommand(c2, Buffer.from([0x05, 0x00, 0x00])); // not sure?
+      // await this.sendCommand(c2, Buffer.from([0x05, 0x00, 0x00])); // not sure?
       await this.sendCommand(c2, Buffer.from([0x03, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
 
@@ -502,7 +493,6 @@ export class MATouchPlatformAccessory {
     if (this.currentState.Active !== value) {
       this.currentState.Active = value;
       this.changedState.Active = true;
-      this.update();
     }
   }
 
@@ -533,7 +523,6 @@ export class MATouchPlatformAccessory {
     if (this.currentState.TargetHeaterCoolerState !== value) {
       this.currentState.TargetHeaterCoolerState = value;
       this.changedState.TargetHeaterCoolerState = true;
-      this.update();
     }
   }
 
@@ -564,7 +553,6 @@ export class MATouchPlatformAccessory {
     if (this.currentState.CoolingThresholdTemperature !== value) {
       this.currentState.CoolingThresholdTemperature = value;
       this.changedState.CoolingThresholdTemperature = true;
-      this.update();
     }
   }
 
@@ -586,7 +574,6 @@ export class MATouchPlatformAccessory {
     if (this.currentState.HeatingThresholdTemperature !== value) {
       this.currentState.HeatingThresholdTemperature = value;
       this.changedState.HeatingThresholdTemperature = true;
-      this.update();
     }
   }
 
@@ -602,7 +589,6 @@ export class MATouchPlatformAccessory {
     if (this.currentState.RotationSpeed !== value) {
       this.currentState.RotationSpeed = value;
       this.changedState.RotationSpeed = true;
-      this.update();
     }
   }
 
@@ -618,7 +604,6 @@ export class MATouchPlatformAccessory {
     if (this.currentState.SwingMode !== value) {
       this.currentState.SwingMode = value;
       this.changedState.SwingMode = true;
-      this.update();
     }
   }
 }
