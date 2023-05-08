@@ -2,7 +2,7 @@
   "private": false,
   "displayName": "Homebridge Mitsubishi MA Thermostat",
   "name": "homebridge-mitsubishi-ma-touch",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Homebridge Mitsubishi MA Touch BLE Thermostat plugin.",
   "license": "MIT",
   "repository": {
