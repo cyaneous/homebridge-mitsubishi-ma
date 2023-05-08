@@ -151,7 +151,7 @@ export class MATouchPlatformAccessory {
       const firmwareChar = characteristics[0];
       const firmwareVersion = await firmwareChar.readAsync();
       this.platform.log.debug('MA Firmware:', firmwareVersion.toString());
-   
+
       const softwareChar = characteristics[1];
       const softwareVersion = await softwareChar.readAsync();
       this.platform.log.debug('MA Software Version:', softwareVersion, softwareVersion.toString());
