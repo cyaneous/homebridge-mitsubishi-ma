@@ -159,6 +159,7 @@ export class MATouchPlatformAccessory {
       this.accessory.getService(this.platform.Service.AccessoryInformation)!
         .setCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion.toString());
 
+      const writeChar = characteristics[2];
       const readChar = characteristics[3];
       readChar.notify(true);
 
@@ -183,7 +184,6 @@ export class MATouchPlatformAccessory {
       });
 
       // let's talk...
-      const writeChar = characteristics[2];
       await this.sendCommand(writeChar, Buffer.from([0x01, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(writeChar, Buffer.from([0x03, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(writeChar, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
@@ -321,12 +321,44 @@ export class MATouchPlatformAccessory {
     // __ __ 0e 05 00 02 00 00 00 32 10 03 60 01 90 02 00 01 10 03
     // 60 01 10 03 80 01 90 02 60 01 40 02 10 02 90 01 40 02 90 01
     // 40 06 00 00 00 00 00 20 02 01 00 10 04 __ __
+
+    // __ __ 0d 05 00 02 00 00 00 12 80 02 00 02 60 02 60 01 10 03
+    // 60 01 10 03 80 01 90 02 60 01 40 02 10 02 90 01 40 02 90 01
+    // 40 06 00 00 00 00 00 20 02 01 00 14 04 __ __
+
+    // 7: mode
+    // 8-9: cool max temp
+    // 10-11: cool min temp
+    // 12-13: heat max temp
+    // 14-15: heat min temp
+    // 16-17: 31.0? [unknown temp?]
+    // 18-19: 16.0? [unknown temp?]
+    // 20-21: 31.0? [unknown temp?]
+    // 22-23: 18.0? [unknown temp?]
+    // 24-25: 29.0? [unknown temp?]
+    // 26-27: 16.0? [unknown temp?]
+    // 28-29: target cool temp
+    // 30-31: target heat temp
+    // 32-33: 19.0? [unknown temp?]
+    // 34-35: 24.0? [unknown temp?]
+    // 36-37: 19.0? [unknown temp?]
+    // 38: fan mode
+    // 39: vane mode
+    // 40-44: zeroes? [unknown]
+    // 45-46: room temp
+    // 47: 0x01? [unknown]
+    // 48: 0x00? [unknown]
+    // 49: 0x14 or 0x04 or other? [flags?] bit2:temp_restriction
+    // 50: 0x04? [unknown]
+
     const data = await this.sendCommand(c, Buffer.from([0x05, 0x02, 0x00]));
 
     if (data.readUInt8(1) !== 0x05 || data.readUInt8(2) !== 0x00) {
-      if (data.readUInt8(2) !== 0x09) { // in menus: 0c 05 09 02 00 10 54 89 00
-        this.platform.log.error('Invalid status reply:', data);
+      if (data.readUInt8(2) == 0x09) { // in menus: 0c 05 09 02 00 10 54 89 00
+        this.platform.log.info('Thermostat is in menus or unavailable, status could not be refreshed.');
+        return;
       }
+      this.platform.log.error('Invalid status reply:', data);
       return;
     }
     if (!(data.readUInt8(1) === 0x05 && data.readUInt8(2) === 0x00) || data.length !== 0x35) {
@@ -352,6 +384,11 @@ export class MATouchPlatformAccessory {
     this.platform.log.debug('TargetHeaterCoolerState:', this.currentState.TargetHeaterCoolerState);
     this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.currentState.TargetHeaterCoolerState);
 
+    // const maxCoolTemp = this.numberFromBase10Hex(data, 8);
+    // const minCoolTemp = this.numberFromBase10Hex(data, 10);
+    // const maxHeatTemp = this.numberFromBase10Hex(data, 12);
+    // const minHeatTemp = this.numberFromBase10Hex(data, 14);
+
     const targetCoolTemp = this.numberFromBase10Hex(data, 28);
     this.platform.log.debug('CoolingThresholdTemperature:', targetCoolTemp);
     this.currentState.CoolingThresholdTemperature = targetCoolTemp;
@@ -362,20 +399,36 @@ export class MATouchPlatformAccessory {
     this.currentState.HeatingThresholdTemperature = targetHeatTemp;
     this.service.updateCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature, this.currentState.HeatingThresholdTemperature);
 
-    const currentTemp = this.numberFromBase10Hex(data, 45);
-    this.platform.log.debug('CurrentTemperature:', currentTemp);
-    this.currentState.CurrentTemperature = currentTemp;
-    this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentState.CurrentTemperature);
+    const fanMode = data.readUInt8(38) >> 4;
+    this.currentState.RotationSpeed = this.maFanModeToRotationSpeed(fanMode);
+    this.platform.log.debug('RotationSpeed:', this.currentState.RotationSpeed);
+    this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentState.RotationSpeed);
 
     const vaneMode = data.readUInt8(39);
     this.currentState.SwingMode = this.maVaneModetoSwingMode(vaneMode);
     this.platform.log.debug('SwingMode:', this.currentState.SwingMode);
     this.service.updateCharacteristic(this.platform.Characteristic.SwingMode, this.currentState.SwingMode);
 
-    const fanMode = data.readUInt8(38) >> 4;
-    this.currentState.RotationSpeed = this.maFanModeToRotationSpeed(fanMode);
-    this.platform.log.debug('RotationSpeed:', this.currentState.RotationSpeed);
-    this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentState.RotationSpeed);
+    const roomTemp = this.numberFromBase10Hex(data, 45);
+    this.platform.log.debug('CurrentTemperature:', roomTemp);
+    this.currentState.CurrentTemperature = roomTemp;
+    this.service.updateCharacteristic(this.platform.Characteristic.CurrentTemperature, this.currentState.CurrentTemperature);
+
+    const unknown47 = data.readUInt8(47);
+    this.platform.log.debug('Unknown47 (usually 0x01):', unknown47.toString(16));
+
+    const unknown48 = data.readUInt8(48);
+    this.platform.log.debug('Unknown48 (usually 0x00):', unknown48.toString(16));
+
+    // 0x4: off
+    // 0x14: on, restrictions?
+    const flags = data.readUInt8(49);
+    let tempRestrict = ((flags & (1 << 2)) !== 0);
+    let maybePower = ((flags & (1 << 4)) !== 0);
+    this.platform.log.debug('Flags:', flags.toString(16), 'Temp Restrict:', tempRestrict, 'Maybe Power:', maybePower);
+
+    const unknown2 = data.readUInt8(50);
+    this.platform.log.debug('Unknown2 (usually 0x04):', unknown2.toString(16));
 
     if (this.currentState.Active === this.platform.Characteristic.Active.ACTIVE) {
       this.currentState.CurrentHeaterCoolerState = this.calculateCurrentHeaterCoolerState();
