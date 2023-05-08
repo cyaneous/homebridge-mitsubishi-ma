@@ -148,24 +148,21 @@ export class MATouchPlatformAccessory {
           MA_CHAR.READ,
         ]);
 
-      const c0 = characteristics[0];
-      const v0 = await c0.readAsync();
-      const firmware = v0.toString();
-      this.platform.log.debug('MA Firmware:', firmware);
+      const firmwareChar = characteristics[0];
+      const firmwareVersion = await firmwareChar.readAsync();
+      this.platform.log.debug('MA Firmware:', firmwareVersion.toString());
    
-      const c1 = characteristics[1];
-      const v1 = await c1.readAsync();
-      const softwareVersion = v1.toString();
-      this.platform.log.debug('MA Software Version:', softwareVersion);
+      const softwareChar = characteristics[1];
+      const softwareVersion = await softwareChar.readAsync();
+      this.platform.log.debug('MA Software Version:', softwareVersion, softwareVersion.toString());
 
       this.accessory.getService(this.platform.Service.AccessoryInformation)!
-        .setCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion);
+        .setCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion.toString());
 
+      const readChar = characteristics[3];
+      readChar.notify(true);
 
-      const c3 = characteristics[3];
-      c3.notify(true);
-
-      c3.on('data', async (data) => {
+      readChar.on('data', async (data) => {
         this.platform.log.debug('RCV:', data, this.receiveLength);
 
         if (this.receiveLength === 0) {
@@ -186,50 +183,49 @@ export class MATouchPlatformAccessory {
       });
 
       // let's talk...
-      const c2 = characteristics[2];
-      await this.sendCommand(c2, Buffer.from([0x01, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      await this.sendCommand(c2, Buffer.from([0x03, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      await this.sendCommand(c2, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      // await this.sendCommand(c2, Buffer.from([0x05, 0x00, 0x00])); // not sure?
-      await this.sendCommand(c2, Buffer.from([0x03, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      await this.sendCommand(c2, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      const writeChar = characteristics[2];
+      await this.sendCommand(writeChar, Buffer.from([0x01, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(writeChar, Buffer.from([0x03, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(writeChar, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      // await this.sendCommand(writeChar, Buffer.from([0x05, 0x00, 0x00])); // not sure?
+      await this.sendCommand(writeChar, Buffer.from([0x03, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(writeChar, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
 
       if (this.changedState.Active) {
-        await this.maSetPower(c2, this.currentState.Active === this.platform.Characteristic.Active.ACTIVE);
+        await this.maSetPower(writeChar, this.currentState.Active === this.platform.Characteristic.Active.ACTIVE);
         this.changedState.Active = false;
       }
 
       if (this.changedState.TargetHeaterCoolerState) {
-        await this.maSetMode(c2, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState));
+        await this.maSetMode(writeChar, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState));
         this.changedState.TargetHeaterCoolerState = false;
       }
 
       if (this.changedState.CoolingThresholdTemperature) {
-        await this.maSetCoolingSetpoint(c2, this.currentState.CoolingThresholdTemperature);
+        await this.maSetCoolingSetpoint(writeChar, this.currentState.CoolingThresholdTemperature);
         this.changedState.CoolingThresholdTemperature = false;
       }
 
       if (this.changedState.HeatingThresholdTemperature) {
-        await this.maSetHeatingSetpoint(c2, this.currentState.HeatingThresholdTemperature);
+        await this.maSetHeatingSetpoint(writeChar, this.currentState.HeatingThresholdTemperature);
         this.changedState.HeatingThresholdTemperature = false;
       }
 
       if (this.changedState.RotationSpeed) {
-        await this.maSetFanMode(c2, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+        await this.maSetFanMode(writeChar, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
         this.changedState.RotationSpeed = false;
       }
 
       if (this.changedState.SwingMode) {
-        await this.maSetVaneMode(c2, this.swingModeToMAVaneMode(this.currentState.SwingMode));
+        await this.maSetVaneMode(writeChar, this.swingModeToMAVaneMode(this.currentState.SwingMode));
         this.changedState.SwingMode = false;
       }
 
-      const status = await this.sendCommand(c2, Buffer.from([0x05, 0x02, 0x00]));
-      await this.processStatus(status);
+      await this.readStatus(writeChar);
 
-      await this.sendCommand(c2, Buffer.from([0x03, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      await this.sendCommand(c2, Buffer.from([0x01, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      await this.sendCommand(c2, Buffer.from([0x03, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(writeChar, Buffer.from([0x03, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(writeChar, Buffer.from([0x01, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      await this.sendCommand(writeChar, Buffer.from([0x03, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       this.platform.log.debug('Disconnecting!');
       await this.peripheral.disconnectAsync();
     } catch (error) {
@@ -321,10 +317,12 @@ export class MATouchPlatformAccessory {
 
   // MARK: - Status
 
-  async processStatus(data) {
+  async readStatus(c) {
     // __ __ 0e 05 00 02 00 00 00 32 10 03 60 01 90 02 00 01 10 03
     // 60 01 10 03 80 01 90 02 60 01 40 02 10 02 90 01 40 02 90 01
     // 40 06 00 00 00 00 00 20 02 01 00 10 04 __ __
+    const data = await this.sendCommand(c, Buffer.from([0x05, 0x02, 0x00]));
+
     if (data.readUInt8(1) !== 0x05 || data.readUInt8(2) !== 0x00) {
       if (data.readUInt8(2) !== 0x09) { // in menus: 0c 05 09 02 00 10 54 89 00
         this.platform.log.error('Invalid status reply:', data);
