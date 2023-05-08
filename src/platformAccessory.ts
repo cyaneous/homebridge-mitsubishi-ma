@@ -131,6 +131,7 @@ export class MATouchPlatformAccessory {
 
     try {
       this.platform.log.debug('Connecting to', this.peripheral.uuid, '...');
+      this.peripheral.cancelConnect();
       await this.peripheral.connectAsync();
       this.platform.log.debug('Connected!');
     } catch (error) {
