@@ -354,7 +354,7 @@ export class MATouchPlatformAccessory {
     const data = await this.sendCommand(c, Buffer.from([0x05, 0x02, 0x00]));
 
     if (data.readUInt8(1) !== 0x05 || data.readUInt8(2) !== 0x00) {
-      if (data.readUInt8(2) == 0x09) { // in menus: 0c 05 09 02 00 10 54 89 00
+      if (data.readUInt8(2) === 0x09) { // in menus: 0c 05 09 02 00 10 54 89 00
         this.platform.log.info('Thermostat is in menus or unavailable, status could not be refreshed.');
         return;
       }
@@ -423,8 +423,8 @@ export class MATouchPlatformAccessory {
     // 0x4: off
     // 0x14: on, restrictions?
     const flags = data.readUInt8(49);
-    let tempRestrict = ((flags & (1 << 2)) !== 0);
-    let maybePower = ((flags & (1 << 4)) !== 0);
+    const tempRestrict = ((flags & (1 << 2)) !== 0);
+    const maybePower = ((flags & (1 << 4)) !== 0);
     this.platform.log.debug('Flags:', flags.toString(16), 'Temp Restrict:', tempRestrict, 'Maybe Power:', maybePower);
 
     const unknown2 = data.readUInt8(50);
