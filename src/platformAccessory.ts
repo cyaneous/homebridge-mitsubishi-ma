@@ -2,6 +2,15 @@ import { Service, PlatformAccessory, APIEvent } from 'homebridge';
 import { MATouchPlatform } from './platform';
 import type { Peripheral } from '@abandonware/noble';
 
+const MA_SERVICE = '0277df18e79611e6bf01fe55135034f3';
+
+const MA_CHAR = {
+  VERSION: '799e3b22e79711e6bf01fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
+  SOFTWARE: 'def9382ae79511e6bf01fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015
+  WRITE: 'e48c1528e79511e6bf01fe55135034f3', // handle = 0x0016, char properties = 0x0c, char value handle = 0x0017
+  READ: 'ea1ea690e79511e6bf01fe55135034f3', // handle = 0x0018, char properties = 0x10, char value handle = 0x0019
+};
+
 const MODE_MASK = {
   POWER: (1 << 0),
   FAN: (1 << 1),
@@ -130,27 +139,27 @@ export class MATouchPlatformAccessory {
     }
 
     try {
-      const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(['0277df18e79611e6bf01fe55135034f3'],
+      const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync([MA_SERVICE],
         [
-          '799e3b22e79711e6bf01fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
-          'def9382ae79511e6bf01fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015
-          'e48c1528e79511e6bf01fe55135034f3', // handle = 0x0016, char properties = 0x0c, char value handle = 0x0017
-          'ea1ea690e79511e6bf01fe55135034f3', // handle = 0x0018, char properties = 0x10, char value handle = 0x0019
+          MA_CHAR.VERSION,
+          MA_CHAR.SOFTWARE,
+          MA_CHAR.WRITE,
+          MA_CHAR.READ,
         ]);
 
       const c0 = characteristics[0];
       const v0 = await c0.readAsync();
-      this.platform.log.debug('Read c0:', v0);
-      if (Buffer.compare(v0, Buffer.from([0x30, 0x31, 0x2e, 0x30, 0x30, 0x2e, 0x30, 0x30])) !== 0) {
-        this.platform.log.error('Unexpected c0 value:', v0);
-      }
-
+      const firmware = v0.toString();
+      this.platform.log.debug('MA Firmware:', firmware);
+   
       const c1 = characteristics[1];
       const v1 = await c1.readAsync();
-      this.platform.log.debug('Read c1:', v1);
-      if (Buffer.compare(v1, Buffer.from([0x43, 0x54, 0x30, 0x31, 0x4d, 0x41, 0x55, 0x5f, 0x30, 0x31, 0x2e, 0x36, 0x31, 0x00, 0x00, 0x00, 0x00, 0x41])) !== 0) {
-        this.platform.log.error('Unexpected c1 value:', v1);
-      }
+      const softwareVersion = v1.toString();
+      this.platform.log.debug('MA Software Version:', softwareVersion);
+
+      this.accessory.getService(this.platform.Service.AccessoryInformation)!
+        .setCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion);
+
 
       const c3 = characteristics[3];
       c3.notify(true);
@@ -315,8 +324,14 @@ export class MATouchPlatformAccessory {
     // __ __ 0e 05 00 02 00 00 00 32 10 03 60 01 90 02 00 01 10 03
     // 60 01 10 03 80 01 90 02 60 01 40 02 10 02 90 01 40 02 90 01
     // 40 06 00 00 00 00 00 20 02 01 00 10 04 __ __
-    if (data.readUInt8(1) !== 0x05 || data.length !== 0x35) {
-      this.platform.log.error('Invalid status reply:', data);
+    if (data.readUInt8(1) !== 0x05 || data.readUInt8(2) !== 0x00) {
+      if (data.readUInt8(2) !== 0x09) { // in menus: 0c 05 09 02 00 10 54 89 00
+        this.platform.log.error('Invalid status reply:', data);
+      }
+      return;
+    }
+    if (!(data.readUInt8(1) === 0x05 && data.readUInt8(2) === 0x00) || data.length !== 0x35) {
+      this.platform.log.error('Invalid status reply:', data); // 0c 05 09 02 00 10 54 89 00
       return;
     }
 
