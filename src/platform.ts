@@ -52,12 +52,12 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
   startDiscovering() {
     noble.on('stateChange', async (state) => {
       if (state === 'poweredOn') {
-        this.log.info('Starting BLE discovery for 30 seconds...');
+        this.log.info('Starting BLE scan for 30 seconds...');
         await noble.startScanningAsync([], false);
 
-        if (this.config.stopDiscovery === true) {
+        if (this.config.stopScan) {
           setTimeout(() => {
-            this.log.info('Stopping BLE discovery.');
+            this.log.info('Stopping BLE scan.');
             noble.stopScanning();
           }, 30000);
         }
@@ -66,7 +66,7 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
 
     noble.on('discover', async (peripheral) => {
       if (peripheral.advertisement.localName?.startsWith('M/R_CT01MAU')) {
-        this.log.info('Found an MA Touch thermostat:', peripheral.advertisement.localName);
+        this.log.info('Found an MA Touch thermostat:', peripheral.advertisement.localName, 'RSSI:', peripheral.rssi);
 
         // generate a unique id for the accessory this should be generated from
         // something globally unique, but constant, for example, the device serial

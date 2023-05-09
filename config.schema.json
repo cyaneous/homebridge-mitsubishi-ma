@@ -12,8 +12,8 @@
         "default": "0000",
         "description": "The same PIN must be used for all thermostats."
       },
-      "stopDiscovery": {
-        "title": "Stop Discovery",
+      "stopScan": {
+        "title": "Stop Scan",
         "type": "boolean",
         "required": true,
         "default": false,

@@ -372,9 +372,9 @@ export class MATouchPlatformAccessory {
 
     if ((mode & MODE_MASK.AUTO) !== 0) {
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.AUTO;
-    } else if ((mode & MODE_MASK.COOL) !== 0) {
+    } else if ((mode & MODE_MASK.COOL) !== 0 && (mode & MODE_MASK.DRY) === 0) {
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.COOL;
-    } else if ((mode & MODE_MASK.HEAT) !== 0) {
+    } else if ((mode & MODE_MASK.HEAT) !== 0 && (mode & MODE_MASK.DRY) === 0) {
       this.currentState.TargetHeaterCoolerState = this.platform.Characteristic.TargetHeaterCoolerState.HEAT;
     } else { // no matching homekit mode, so say we're off
       this.currentState.Active = this.platform.Characteristic.Active.INACTIVE;
@@ -429,7 +429,7 @@ export class MATouchPlatformAccessory {
     const flags = data.readUInt8(49);
     const tempRestrict = ((flags & (1 << 2)) !== 0);
     const maybePower = ((flags & (1 << 4)) !== 0);
-    this.platform.log.debug('Flags:', flags.toString(16), 'Temp Restrict:', tempRestrict, 'Maybe Power:', maybePower);
+    this.platform.log.debug('Flags:', flags.toString(16), 'Temp Restrict:', tempRestrict, 'Power?:', maybePower);
 
     const unknown2 = data.readUInt8(50);
     this.platform.log.debug('Unknown2 (usually 0x04):', unknown2.toString(16));
