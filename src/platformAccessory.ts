@@ -182,42 +182,42 @@ export class MATouchPlatformAccessory {
 
       if (this.changedState.Active) {
         if (await this.maSetPower(writeChar, this.currentState.Active === this.platform.Characteristic.Active.ACTIVE) !== true) {
-          this.platform.log.error('Failed to set power!')
+          this.platform.log.error('Failed to set power!');
         }
         this.changedState.Active = false;
       }
 
       if (this.changedState.TargetHeaterCoolerState) {
         if (await this.maSetMode(writeChar, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState)) !== true) {
-          this.platform.log.error('Failed to set mode!')
+          this.platform.log.error('Failed to set mode!');
         }
         this.changedState.TargetHeaterCoolerState = false;
       }
 
       if (this.changedState.CoolingThresholdTemperature) {
         if (await this.maSetCoolingSetpoint(writeChar, this.currentState.CoolingThresholdTemperature) !== true) {
-          this.platform.log.error('Failed to set cooling setpoint!')
+          this.platform.log.error('Failed to set cooling setpoint!');
         }
         this.changedState.CoolingThresholdTemperature = false;
       }
 
       if (this.changedState.HeatingThresholdTemperature) {
         if (await this.maSetHeatingSetpoint(writeChar, this.currentState.HeatingThresholdTemperature) !== true) {
-          this.platform.log.error('Failed to set heating setpoint!')
+          this.platform.log.error('Failed to set heating setpoint!');
         }
         this.changedState.HeatingThresholdTemperature = false;
       }
 
       if (this.changedState.RotationSpeed) {
         if (await this.maSetFanMode(writeChar, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed)) !== true) {
-          this.platform.log.error('Failed to set fan mode!')
+          this.platform.log.error('Failed to set fan mode!');
         }
         this.changedState.RotationSpeed = false;
       }
 
       if (this.changedState.SwingMode) {
         if (await this.maSetVaneMode(writeChar, this.swingModeToMAVaneMode(this.currentState.SwingMode)) !== true) {
-          this.platform.log.error('Failed to set swing mode!')
+          this.platform.log.error('Failed to set swing mode!');
         }
         this.changedState.SwingMode = false;
       }
@@ -228,7 +228,7 @@ export class MATouchPlatformAccessory {
       await this.sendCommand(writeChar, Buffer.from([0x03, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(writeChar, Buffer.from([0x01, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(writeChar, Buffer.from([0x03, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      
+
       this.platform.log.debug('Disconnecting!');
       await this.peripheral.disconnectAsync();
     } catch (error) {
@@ -292,7 +292,7 @@ export class MATouchPlatformAccessory {
     const cool = this.numberToBase10Hex(coolSetpoint);
     const heat = this.numberToBase10Hex(heatSetpoint);
     const result = await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, flagsC, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, (vaneMode << 4) + fanMode, 0x00, 0x00]));
-    return (result.readUInt8(1) == 0x05 && result.readUInt8(2) == 0x00 && result.readUInt8(3) == 0x01);
+    return (result.readUInt8(1) === 0x05 && result.readUInt8(2) === 0x00 && result.readUInt8(3) === 0x01);
   }
 
   async maSetPower(c, yorn) : Promise<boolean> {
