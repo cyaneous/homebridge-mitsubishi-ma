@@ -133,36 +133,24 @@ export class MATouchPlatformAccessory {
       this.platform.log.debug('Connecting to', this.peripheral.uuid, '...');
       this.peripheral.cancelConnect();
       await this.peripheral.connectAsync();
-      this.platform.log.debug('Connected state:', this.peripheral.state);
+      this.platform.log.debug('State:', this.peripheral.state);
     } catch (error) {
       this.platform.log.error('Connection failed:', error, 'state:', this.peripheral.state);
       return;
     }
 
     try {
-      const {characteristics} = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync([MA_SERVICE],
-        [
-          MA_CHAR.VERSION,
-          MA_CHAR.SOFTWARE,
-          MA_CHAR.WRITE,
-          MA_CHAR.READ,
-        ]);
-
-      const firmwareChar = characteristics[0];
+      const [firmwareChar, softwareChar, writeChar, readChar] = (await this.peripheral.discoverSomeServicesAndCharacteristicsAsync([MA_SERVICE], [MA_CHAR.VERSION, MA_CHAR.SOFTWARE, MA_CHAR.WRITE, MA_CHAR.READ])).characteristics;
       const firmwareVersion = await firmwareChar.readAsync();
-      this.platform.log.debug('MA Firmware:', firmwareVersion.toString());
+      this.platform.log.debug('MA Firmware Version:', firmwareVersion.toString());
 
-      const softwareChar = characteristics[1];
       const softwareVersion = await softwareChar.readAsync();
       this.platform.log.debug('MA Software Version:', softwareVersion, softwareVersion.toString());
 
       this.accessory.getService(this.platform.Service.AccessoryInformation)!
         .setCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion.toString());
 
-      const writeChar = characteristics[2];
-      const readChar = characteristics[3];
       readChar.notify(true);
-
       readChar.on('data', async (data) => {
         this.platform.log.debug('RCV:', data, this.receiveLength);
 
@@ -184,48 +172,63 @@ export class MATouchPlatformAccessory {
       });
 
       // let's talk...
+      // TODO: figure out what these do & error checking
       await this.sendCommand(writeChar, Buffer.from([0x01, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(writeChar, Buffer.from([0x03, 0x00, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
-      await this.sendCommand(writeChar, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      // await this.sendCommand(writeChar, Buffer.from([0x01, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       // await this.sendCommand(writeChar, Buffer.from([0x05, 0x00, 0x00])); // not sure?
-      await this.sendCommand(writeChar, Buffer.from([0x03, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      // await this.sendCommand(writeChar, Buffer.from([0x03, 0x03, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(writeChar, Buffer.from([0x01, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
 
       if (this.changedState.Active) {
-        await this.maSetPower(writeChar, this.currentState.Active === this.platform.Characteristic.Active.ACTIVE);
+        if (await this.maSetPower(writeChar, this.currentState.Active === this.platform.Characteristic.Active.ACTIVE) !== true) {
+          this.platform.log.error('Failed to set power!')
+        }
         this.changedState.Active = false;
       }
 
       if (this.changedState.TargetHeaterCoolerState) {
-        await this.maSetMode(writeChar, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState));
+        if (await this.maSetMode(writeChar, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState)) !== true) {
+          this.platform.log.error('Failed to set mode!')
+        }
         this.changedState.TargetHeaterCoolerState = false;
       }
 
       if (this.changedState.CoolingThresholdTemperature) {
-        await this.maSetCoolingSetpoint(writeChar, this.currentState.CoolingThresholdTemperature);
+        if (await this.maSetCoolingSetpoint(writeChar, this.currentState.CoolingThresholdTemperature) !== true) {
+          this.platform.log.error('Failed to set cooling setpoint!')
+        }
         this.changedState.CoolingThresholdTemperature = false;
       }
 
       if (this.changedState.HeatingThresholdTemperature) {
-        await this.maSetHeatingSetpoint(writeChar, this.currentState.HeatingThresholdTemperature);
+        if (await this.maSetHeatingSetpoint(writeChar, this.currentState.HeatingThresholdTemperature) !== true) {
+          this.platform.log.error('Failed to set heating setpoint!')
+        }
         this.changedState.HeatingThresholdTemperature = false;
       }
 
       if (this.changedState.RotationSpeed) {
-        await this.maSetFanMode(writeChar, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+        if (await this.maSetFanMode(writeChar, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed)) !== true) {
+          this.platform.log.error('Failed to set fan mode!')
+        }
         this.changedState.RotationSpeed = false;
       }
 
       if (this.changedState.SwingMode) {
-        await this.maSetVaneMode(writeChar, this.swingModeToMAVaneMode(this.currentState.SwingMode));
+        if (await this.maSetVaneMode(writeChar, this.swingModeToMAVaneMode(this.currentState.SwingMode)) !== true) {
+          this.platform.log.error('Failed to set swing mode!')
+        }
         this.changedState.SwingMode = false;
       }
 
       await this.readStatus(writeChar);
 
+      // TODO: figure out what these do & error checking
       await this.sendCommand(writeChar, Buffer.from([0x03, 0x04, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(writeChar, Buffer.from([0x01, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
       await this.sendCommand(writeChar, Buffer.from([0x03, 0x01, 0x01, this.pin[0], this.pin[1], 0x00, 0x00, 0x00]));
+      
       this.platform.log.debug('Disconnecting!');
       await this.peripheral.disconnectAsync();
     } catch (error) {
@@ -270,7 +273,7 @@ export class MATouchPlatformAccessory {
 
   // MARK: - Control
 
-  async maControlCommand(c, flagsA, flagsB, flagsC, mode, coolSetpoint, heatSetpoint, vaneMode, fanMode) {
+  async maControlCommand(c, flagsA, flagsB, flagsC, mode, coolSetpoint, heatSetpoint, vaneMode, fanMode) : Promise<boolean> {
     // off:        05 0101 0100 0010 4502 1002 9001 4002 9001 6400 00
     // on:         05 0101 0100 0011 4502 1002 9001 4002 9001 6400 00
     // mode auto:  05 0101 0200 0079 4502 1002 9001 4002 9001 6400 00
@@ -288,36 +291,37 @@ export class MATouchPlatformAccessory {
     // vane swing: 05 0101 0000 0211 4502 1002 9001 4002 9001 7400 00 <-- so 7 is vane, 4 is fan
     const cool = this.numberToBase10Hex(coolSetpoint);
     const heat = this.numberToBase10Hex(heatSetpoint);
-    await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, flagsC, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, (vaneMode << 4) + fanMode, 0x00, 0x00]));
+    const result = await this.sendCommand(c, Buffer.from([0x05, 0x01, 0x01, flagsA, flagsB, flagsC, mode, cool[0], cool[1], heat[0], heat[1], 0x90, 0x01, 0x40, 0x02, 0x90, 0x01, (vaneMode << 4) + fanMode, 0x00, 0x00]));
+    return (result.readUInt8(1) == 0x05 && result.readUInt8(2) == 0x00 && result.readUInt8(3) == 0x01);
   }
 
-  async maSetPower(c, yorn) {
-    await this.maControlCommand(c, 0x01, 0x00, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+  async maSetPower(c, yorn) : Promise<boolean> {
+    return await this.maControlCommand(c, 0x01, 0x00, 0x00, yorn ? 0x11 : 0x10, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
-  async maSetMode(c, mode) {
-    await this.maControlCommand(c, 0x02, 0x00, 0x00, mode, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+  async maSetMode(c, mode) : Promise<boolean> {
+    return await this.maControlCommand(c, 0x02, 0x00, 0x00, mode, this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
-  async maSetCoolingSetpoint(c, coolingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x01, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), coolingSetpoint, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+  async maSetCoolingSetpoint(c, coolingSetpoint) : Promise<boolean> {
+    return await this.maControlCommand(c, 0x00, 0x01, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), coolingSetpoint, this.currentState.HeatingThresholdTemperature, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
-  async maSetHeatingSetpoint(c, heatingSetpoint) {
-    await this.maControlCommand(c, 0x00, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, heatingSetpoint, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+  async maSetHeatingSetpoint(c, heatingSetpoint) : Promise<boolean> {
+    return await this.maControlCommand(c, 0x00, 0x02, 0x00, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, heatingSetpoint, this.currentState.SwingMode ? 0x7 : 0x6, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
-  async maSetFanMode(c, rotationSpeed) {
-    await this.maControlCommand(c, 0x00, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.swingModeToMAVaneMode(this.currentState.SwingMode), rotationSpeed);
+  async maSetFanMode(c, rotationSpeed) : Promise<boolean> {
+    return await this.maControlCommand(c, 0x00, 0x00, 0x01, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, this.swingModeToMAVaneMode(this.currentState.SwingMode), rotationSpeed);
   }
 
-  async maSetVaneMode(c, vaneMode) {
-    await this.maControlCommand(c, 0x00, 0x00, 0x02, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, vaneMode, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
+  async maSetVaneMode(c, vaneMode) : Promise<boolean> {
+    return await this.maControlCommand(c, 0x00, 0x00, 0x02, this.targetHeaterCoolerStateToMAMode(this.currentState.TargetHeaterCoolerState), this.currentState.CoolingThresholdTemperature, this.currentState.HeatingThresholdTemperature, vaneMode, this.rotationSpeedToMAFanMode(this.currentState.RotationSpeed));
   }
 
   // MARK: - Status
 
-  async readStatus(c) {
+  async readStatus(c) : Promise<boolean> {
     // __ __ 0e 05 00 02 00 00 00 32 10 03 60 01 90 02 00 01 10 03
     // 60 01 10 03 80 01 90 02 60 01 40 02 10 02 90 01 40 02 90 01
     // 40 06 00 00 00 00 00 20 02 01 00 10 04 __ __
@@ -354,17 +358,17 @@ export class MATouchPlatformAccessory {
 
     const data = await this.sendCommand(c, Buffer.from([0x05, 0x02, 0x00]));
 
-    if (data.readUInt8(1) !== 0x05 || data.readUInt8(2) !== 0x00) {
+    if (data.readUInt8(1) !== 0x05 || data.readUInt8(2) !== 0x00 || data.readUInt8(3) !== 0x02) {
       if (data.readUInt8(2) === 0x09) { // in menus: 0c 05 09 02 00 10 54 89 00
         this.platform.log.info('Thermostat is in menus or unavailable, status could not be refreshed.');
-        return;
+        return false;
       }
       this.platform.log.error('Invalid status reply:', data);
-      return;
+      return false;
     }
     if (!(data.readUInt8(1) === 0x05 && data.readUInt8(2) === 0x00) || data.length !== 0x35) {
       this.platform.log.error('Invalid status reply:', data); // 0c 05 09 02 00 10 54 89 00
-      return;
+      return false;
     }
 
     const mode = data.readUInt8(7);
@@ -453,6 +457,8 @@ export class MATouchPlatformAccessory {
     }
     this.platform.log.debug('CurrentHeaterCoolerState:', this.currentState.CurrentHeaterCoolerState);
     this.service.updateCharacteristic(this.platform.Characteristic.CurrentHeaterCoolerState, this.currentState.CurrentHeaterCoolerState);
+
+    return true;
   }
 
   // MARK: - Utility
