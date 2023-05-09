@@ -2,6 +2,10 @@ import { Service, PlatformAccessory, APIEvent } from 'homebridge';
 import { MATouchPlatform } from './platform';
 import type { Peripheral } from '@abandonware/noble';
 
+/**
+ * Constants
+ */
+
 const MA_SERVICE = '0277df18e79611e6bf01fe55135034f3';
 
 const MA_CHAR = {
@@ -22,8 +26,6 @@ const MODE_MASK = {
 
 /**
  * Platform Accessory
- * An instance of this class is created for each accessory your platform registers
- * Each accessory may expose multiple services of different service types.
  */
 export class MATouchPlatformAccessory {
   private service: Service;
@@ -40,8 +42,8 @@ export class MATouchPlatformAccessory {
     CurrentHeaterCoolerState: 0,
     TargetHeaterCoolerState: 0,
     CurrentTemperature: 10,
-    CoolingThresholdTemperature: 10,
-    HeatingThresholdTemperature: 10,
+    CoolingThresholdTemperature: 16,
+    HeatingThresholdTemperature: 16,
     RotationSpeed: 100,
     SwingMode: 0,
   };
@@ -88,10 +90,12 @@ export class MATouchPlatformAccessory {
       .onGet(this.handleCurrentTemperatureGet.bind(this));
 
     this.service.getCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature)
+      .setProps({ minStep: 0.5, minValue: 10, maxValue: 29 })
       .onGet(this.handleHeatingThresholdTemperatureGet.bind(this))
       .onSet(this.handleHeatingThresholdTemperatureSet.bind(this));
 
     this.service.getCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature)
+      .setProps({ minStep: 0.5, minValue: 16, maxValue: 31 })
       .onGet(this.handleCoolingThresholdTemperatureGet.bind(this))
       .onSet(this.handleCoolingThresholdTemperatureSet.bind(this));
 
@@ -141,14 +145,16 @@ export class MATouchPlatformAccessory {
 
     try {
       const [firmwareChar, softwareChar, writeChar, readChar] = (await this.peripheral.discoverSomeServicesAndCharacteristicsAsync([MA_SERVICE], [MA_CHAR.VERSION, MA_CHAR.SOFTWARE, MA_CHAR.WRITE, MA_CHAR.READ])).characteristics;
+
       const firmwareVersion = await firmwareChar.readAsync();
       this.platform.log.debug('MA Firmware Version:', firmwareVersion.toString());
+      this.accessory.getService(this.platform.Service.AccessoryInformation)!
+        .updateCharacteristic(this.platform.Characteristic.SoftwareRevision, firmwareVersion.toString());
 
       const softwareVersion = await softwareChar.readAsync();
       this.platform.log.debug('MA Software Version:', softwareVersion, softwareVersion.toString());
-
       this.accessory.getService(this.platform.Service.AccessoryInformation)!
-        .setCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion.toString());
+        .updateCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion.toString());
 
       readChar.notify(true);
       readChar.on('data', async (data) => {
@@ -389,10 +395,15 @@ export class MATouchPlatformAccessory {
     this.platform.log.debug('TargetHeaterCoolerState:', this.currentState.TargetHeaterCoolerState);
     this.service.updateCharacteristic(this.platform.Characteristic.TargetHeaterCoolerState, this.currentState.TargetHeaterCoolerState);
 
-    // const maxCoolTemp = this.numberFromBase10Hex(data, 8);
-    // const minCoolTemp = this.numberFromBase10Hex(data, 10);
-    // const maxHeatTemp = this.numberFromBase10Hex(data, 12);
-    // const minHeatTemp = this.numberFromBase10Hex(data, 14);
+    const maxCoolTemp = this.numberFromBase10Hex(data, 8);
+    const minCoolTemp = this.numberFromBase10Hex(data, 10);
+    this.service.getCharacteristic(this.platform.Characteristic.CoolingThresholdTemperature)
+      .setProps({ minStep: 0.5, minValue: minCoolTemp, maxValue: maxCoolTemp });
+
+    const maxHeatTemp = this.numberFromBase10Hex(data, 12);
+    const minHeatTemp = this.numberFromBase10Hex(data, 14);
+    this.service.getCharacteristic(this.platform.Characteristic.HeatingThresholdTemperature)
+      .setProps({ minStep: 0.5, minValue: minHeatTemp, maxValue: maxHeatTemp });
 
     const targetCoolTemp = this.numberFromBase10Hex(data, 28);
     this.platform.log.debug('CoolingThresholdTemperature:', targetCoolTemp);
@@ -410,7 +421,7 @@ export class MATouchPlatformAccessory {
     this.service.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.currentState.RotationSpeed);
 
     const vaneMode = data.readUInt8(39);
-    this.currentState.SwingMode = this.maVaneModetoSwingMode(vaneMode);
+    this.currentState.SwingMode = this.maVaneModeToSwingMode(vaneMode);
     this.platform.log.debug('SwingMode:', this.currentState.SwingMode);
     this.service.updateCharacteristic(this.platform.Characteristic.SwingMode, this.currentState.SwingMode);
 
@@ -509,7 +520,7 @@ export class MATouchPlatformAccessory {
     return swingMode === 1 ? 0x7 : 0x6;
   }
 
-  maVaneModetoSwingMode(vaneMode: number) : number {
+  maVaneModeToSwingMode(vaneMode: number) : number {
     return vaneMode === 0x7 ? 1 : 0;
   }
 
