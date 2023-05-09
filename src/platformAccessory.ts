@@ -9,8 +9,8 @@ import type { Peripheral } from '@abandonware/noble';
 const MA_SERVICE = '0277df18e79611e6bf01fe55135034f3';
 
 const MA_CHAR = {
-  VERSION: '799e3b22e79711e6bf01fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
-  SOFTWARE: 'def9382ae79511e6bf01fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015
+  FIRMWARE_VERSION: '799e3b22e79711e6bf01fe55135034f3', // handle = 0x0012, char properties = 0x02, char value handle = 0x0013
+  SOFTWARE_VERSION: 'def9382ae79511e6bf01fe55135034f3', // handle = 0x0014, char properties = 0x02, char value handle = 0x0015
   WRITE: 'e48c1528e79511e6bf01fe55135034f3', // handle = 0x0016, char properties = 0x0c, char value handle = 0x0017
   READ: 'ea1ea690e79511e6bf01fe55135034f3', // handle = 0x0018, char properties = 0x10, char value handle = 0x0019
 };
@@ -144,17 +144,17 @@ export class MATouchPlatformAccessory {
     }
 
     try {
-      const [firmwareChar, softwareChar, writeChar, readChar] = (await this.peripheral.discoverSomeServicesAndCharacteristicsAsync([MA_SERVICE], [MA_CHAR.VERSION, MA_CHAR.SOFTWARE, MA_CHAR.WRITE, MA_CHAR.READ])).characteristics;
+      const [firmwareVerChar, softwareVerChar, writeChar, readChar] = (await this.peripheral.discoverSomeServicesAndCharacteristicsAsync([MA_SERVICE], [MA_CHAR.FIRMWARE_VERSION, MA_CHAR.SOFTWARE_VERSION, MA_CHAR.WRITE, MA_CHAR.READ])).characteristics;
 
-      const firmwareVersion = await firmwareChar.readAsync();
+      const firmwareVersion = await firmwareVerChar.readAsync();
       this.platform.log.debug('MA Firmware Version:', firmwareVersion.toString());
       this.accessory.getService(this.platform.Service.AccessoryInformation)!
-        .updateCharacteristic(this.platform.Characteristic.SoftwareRevision, firmwareVersion.toString());
+        .updateCharacteristic(this.platform.Characteristic.SoftwareRevision, firmwareVersion.toString()); // intentionally swapped with FirmwareRevision
 
-      const softwareVersion = await softwareChar.readAsync();
+      const softwareVersion = await softwareVerChar.readAsync();
       this.platform.log.debug('MA Software Version:', softwareVersion, softwareVersion.toString());
       this.accessory.getService(this.platform.Service.AccessoryInformation)!
-        .updateCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion.toString());
+        .updateCharacteristic(this.platform.Characteristic.FirmwareRevision, softwareVersion.toString()); // intentionally swapped with SoftwareRevision
 
       readChar.notify(true);
       readChar.on('data', async (data) => {
