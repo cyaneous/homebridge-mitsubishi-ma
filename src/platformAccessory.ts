@@ -35,6 +35,7 @@ export class MATouchPlatformAccessory {
   private receiveLength = 0;
   private receiveBuffer = Buffer.alloc(0);
   private receiveResolve;
+  private updateFailCount = 0;
   private isShutdown = false;
 
   private currentState = {
@@ -108,6 +109,8 @@ export class MATouchPlatformAccessory {
       .onGet(this.handleSwingModeGet.bind(this))
       .onSet(this.handleSwingModeSet.bind(this));
 
+    this.service.addOptionalCharacteristic(this.platform.Characteristic.StatusFault);
+
     this.pin = this.pinToBase10Hex(this.platform.config.pin || 0);
 
     // Update characteristics values asynchronously
@@ -129,12 +132,16 @@ export class MATouchPlatformAccessory {
     clearTimeout(this.updateTimeout);
     this.updateTimeout = setTimeout(async () => await this.update(), 10000);
 
+    const statusFault = (this.updateFailCount >= 3) ? this.platform.Characteristic.StatusFault.GENERAL_FAULT : this.platform.Characteristic.StatusFault.NO_FAULT;
+    this.service.updateCharacteristic(this.platform.Characteristic.StatusFault, statusFault);
+
     if (this.peripheral.state === 'connected') {
       await this.peripheral.disconnectAsync();
     }
 
     try {
       this.platform.log.debug('Connecting to', this.peripheral.uuid, '...');
+      this.updateFailCount++;
       this.peripheral.cancelConnect();
       await this.peripheral.connectAsync();
       this.platform.log.debug('State:', this.peripheral.state);
@@ -237,6 +244,7 @@ export class MATouchPlatformAccessory {
 
       this.platform.log.debug('Disconnecting!');
       await this.peripheral.disconnectAsync();
+      this.updateFailCount = 0;
     } catch (error) {
       this.platform.log.error('Communications error in update():', error);
       await this.peripheral.disconnectAsync();
