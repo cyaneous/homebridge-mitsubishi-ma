@@ -1,6 +1,6 @@
 import { Service, PlatformAccessory, APIEvent } from 'homebridge';
 import { MATouchPlatform } from './platform';
-import type { Peripheral } from '@abandonware/noble';
+import { Peripheral } from '@abandonware/noble';
 
 /**
  * Constants
