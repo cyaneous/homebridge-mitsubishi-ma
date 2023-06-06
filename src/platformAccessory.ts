@@ -5,7 +5,6 @@ import { Peripheral } from '@abandonware/noble';
 /**
  * Constants
  */
-
 const MA_SERVICE = '0277df18e79611e6bf01fe55135034f3';
 
 const MA_CHAR = {
@@ -398,6 +397,17 @@ export class MATouchPlatformAccessory {
       this.currentState.Active = this.platform.Characteristic.Active.INACTIVE;
     }
 
+    /*this.platform.log.debug('Mode/State:', mode.toString(16));
+    this.platform.log.debug(
+      '7:', (mode & (1 << 7)) !== 0, 
+      'A:', (mode & MODE_MASK.AUTO) !== 0,
+      'D:', (mode & MODE_MASK.DRY) !== 0, 
+      'H:', (mode & MODE_MASK.HEAT) !== 0, 
+      'C:', (mode & MODE_MASK.COOL) !== 0, 
+      '2:', (mode & (1 << 2)) !== 0, 
+      'F:', (mode & MODE_MASK.FAN) !== 0, 
+      'P:', (mode & MODE_MASK.POWER) !== 0
+    );*/
     this.platform.log.debug('Active:', this.currentState.Active);
     this.service.updateCharacteristic(this.platform.Characteristic.Active, this.currentState.Active);
     this.platform.log.debug('TargetHeaterCoolerState:', this.currentState.TargetHeaterCoolerState);

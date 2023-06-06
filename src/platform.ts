@@ -102,7 +102,7 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
 
           // store a copy of the device object in the `accessory.context`
           // the `context` property can be used to store any data about the accessory you may need
-          // accessory.context.peripheral = peripheral;
+          // accessory.context.address = peripheral.address;
 
           // create the accessory handler for the newly created accessory
           // this is imported from `platformAccessory.ts`
@@ -114,5 +114,4 @@ export class MATouchPlatform implements DynamicPlatformPlugin {
       }
     });
   }
-
 }
